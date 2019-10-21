@@ -92,14 +92,21 @@ if __name__=='__main__':
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--test_batch_size', default=256, type=int)
     parser.add_argument('--timesteps', default=100, type=int)
+    parser.add_argument('--input_poisson', action='store_true')
     parser.add_argument('--epochs', default=90, type=int)
     parser.add_argument('--half', default=False, type=bool)
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
     net = TestNet().cuda()
+    if not args.input_poisson:
+        net.conv1.process_input_im=True
+    else:
+        assert NotImplementedError
     if args.resume:
         net.load_state_dict(torch.load(args.resume),False)
+
     validate(False,test_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
+
     net.spike_mode()
     validate(True,test_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
