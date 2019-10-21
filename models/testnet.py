@@ -64,7 +64,8 @@ class TestNet(SpikeModule):
             x=conv1_out.to_float()
         else:
             x=conv1_out.data
-        out = F.relu(self.bn1(x))
+        out = F.relu(x)
+        # out = F.relu(self.bn1(x))
         out = F.max_pool2d(out, 2)
         out = F.relu(self.bn2(self.conv2(out)))
         out = F.max_pool2d(out, 2)

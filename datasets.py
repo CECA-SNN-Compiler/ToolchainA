@@ -137,12 +137,12 @@ def get_dataset(args):
         rand_inds = np.arange(len(train_val_set))
         np.random.seed(3)
         np.random.shuffle(rand_inds)
-        val_set=copy.deepcopy(train_val_set)
-        train_set=copy.deepcopy(train_val_set)
-        train_set.data=train_set.data[5000:]
-        train_set.targets=train_set.targets[5000:]
-        val_set.data=train_set.data[:5000]
-        val_set.targets=train_set.targets[:5000]
+        val_set=set(root, train=True, download=True, transform=transform_test)
+        train_set=set(root, train=True, download=True, transform=transform_train)
+        train_set.data=train_set.data[500:]
+        train_set.targets=train_set.targets[500:]
+        val_set.data=val_set.data[:500]
+        val_set.targets=val_set.targets[:500]
 
         train_val_loader=torch.utils.data.DataLoader(
             train_val_set, batch_size=args.batch_size, shuffle=True, drop_last=True, **kwargs

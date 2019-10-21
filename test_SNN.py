@@ -6,6 +6,18 @@ import numpy as np
 import time
 import torch.nn as nn
 from spike_tensor import SpikeTensor
+import GPUtil
+import os
+from utils import fuse_conv_bn_eval
+from torchvision.datasets import ImageFolder
+from torch.utils.data import DataLoader
+import copy
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+
+min_mem_gpu = np.argmin([_.memoryUsed for _ in GPUtil.getGPUs()])
+print("selecting GPU {}".format(min_mem_gpu))
+os.environ['CUDA_VISIBLE_DEVICES'] = str(min_mem_gpu)
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -87,26 +99,33 @@ def validate(spike_mode, test_loader, model, device, criterion, epoch, train_wri
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
     parser.add_argument('--base_lr', default=0.05, type=float, help='learning rate')
-    parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
-    # parser.add_argument('--resume', '-r', default="checkpoint/testnet_original_e10T2026_original.pth", help='resume from checkpoint')
-    parser.add_argument('--batch_size', default=256, type=int)
-    parser.add_argument('--test_batch_size', default=256, type=int)
-    parser.add_argument('--timesteps', default=100, type=int)
+    # parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
+    parser.add_argument('--resume', '-r', default="checkpoint/testnet_original_e10T2026_original.pth", help='resume from checkpoint')
+    parser.add_argument('--batch_size', default=16, type=int)
+    parser.add_argument('--test_batch_size', default=2, type=int)
+    parser.add_argument('--timesteps', default=1000, type=int)
     parser.add_argument('--input_poisson', action='store_true')
+    parser.add_argument('--Vthr', default=1,type=float)
+    parser.add_argument('--reset_mode', default='subtraction',type=str)
     parser.add_argument('--epochs', default=90, type=int)
     parser.add_argument('--half', default=False, type=bool)
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
     net = TestNet().cuda()
+
+    net.set_reset_mode(args.reset_mode)
+
     if not args.input_poisson:
         net.conv1.process_input_im=True
     else:
         assert NotImplementedError
     if args.resume:
         net.load_state_dict(torch.load(args.resume),False)
+    net.eval()
+    net.conv1=fuse_conv_bn_eval(net.conv1,net.bn1)
+    net.conv1.Vthr = args.Vthr
+    validate(False,val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
 
-    validate(False,test_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
-
-    net.spike_mode()
-    validate(True,test_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
+    net.set_spike_mode()
+    validate(True,val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
