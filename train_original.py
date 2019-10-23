@@ -25,7 +25,7 @@ parser.add_argument('--batch_size', default=128,type=int)
 parser.add_argument('--test_batch_size', default=512,type=int)
 parser.add_argument('--config_name',default='testnet')
 parser.add_argument('--actions',default='',type=str)
-parser.add_argument('--epochs',default=100,type=int)
+parser.add_argument('--epochs',default=15,type=int)
 parser.add_argument('--parallel',default=False)
 parser.add_argument('--weight_decay',default=1e-4,type=float)
 parser.add_argument('--alpha',default=1,type=float)
@@ -74,7 +74,7 @@ if 'testnet2'==config_name:
     net=TestNetOriginal(dataset=args.dataset)
 
 model_name=config_name
-log_name=f'/{model_name}_original_e{args.epochs}T{time.strftime("%H%M")}'
+log_name=f'/{model_name}_original_e{args.epochs}'
 writer=tensorboardX.SummaryWriter(f'log/{log_name}')
 
 
@@ -142,10 +142,12 @@ def test(epoch):
     acc = 100.*correct/total
     if acc > best_acc:
         print("save best acc",acc)
-        torch.save(net.state_dict(),'checkpoint/{}_original.pth'.format(log_name))
+        torch.save(net.state_dict(),'checkpoint/{}.pth'.format(log_name))
         best_acc=acc
 
 for epoch in range(0, args.epochs):
     train(epoch)
     lr_scheduler.step(epoch)
     test(epoch)
+os.system('mv {} {}'.format('checkpoint/{}.pth'.format(log_name),
+                            'checkpoint/{}_{:.3f}.pth'.format(log_name,best_acc)))

@@ -12,9 +12,9 @@ class TestNetFake(nn.Module):
 
     def forward(self, x):
         out=self.conv1(x)
-        out = F.avg_pool2d(out, 2)
+        out = F.max_pool2d(out, 2)
         out = self.conv2(out)
-        out = F.avg_pool2d(out, 2)
+        out = F.max_pool2d(out, 2)
         out = self.conv3(out)
         out = out.view(out.size(0), -1)
         out = self.fc1(out)
@@ -43,9 +43,9 @@ class TestNetOriginal(nn.Module):
     def forward(self, x):
         conv1_out=self.conv1(x)
         out = F.relu(self.bn1(conv1_out))
-        out = F.avg_pool2d(out, 2)
+        out = F.max_pool2d(out, 2)
         out = F.relu(self.bn2(self.conv2(out)))
-        out = F.avg_pool2d(out, 2)
+        out = F.max_pool2d(out, 2)
         out = F.relu(self.bn3(self.conv3(out)))
         out = out.view(out.size(0), -1)
         out = self.fc1(out)
@@ -68,21 +68,26 @@ class TestNet(SpikeModule):
         self.conv1 = SpikeConv2d(nunits_input, int(16 * scale), 5)
         self.bn1 = nn.BatchNorm2d(int(16 * scale))
         self.conv2 = SpikeConv2d(int(16 * scale), int(32 * scale), 3)
+        # self.conv2 = nn.Conv2d(int(16 * scale), int(32 * scale), 3)
         self.bn2 = nn.BatchNorm2d(int(32 * scale))
         self.conv3 = nn.Conv2d(int(32 * scale), int(32 * scale), 3)
         self.bn3 = nn.BatchNorm2d(int(32 * scale))
         self.fc1 = nn.Linear(nuintis_fc, outputs)
 
     def forward(self, x):
-        conv1_out=self.conv1(x)
-        if conv1_out.is_spike:
-            x=conv1_out.to_float()
+        if self.spike_mode:
+            out = self.conv1(x)
+            out = spike_pooling(out, 2,mode='max')
+            out=self.conv2(out)
+            out = out.to_float()
         else:
-            x=conv1_out.data
-        out = F.relu(x)
-        # out = F.relu(self.bn1(x))
-        out = F.max_pool2d(out, 2)
-        out = F.relu((self.conv2(out)))
+            out = F.relu(self.conv1(x))
+            out = F.max_pool2d(out, 2)
+            out = F.relu(self.conv2(out))
+
+        # out = F.max_pool2d(out, 2)
+        # out = F.relu((self.conv2(out)))
+
         out = F.max_pool2d(out, 2)
         out = F.relu(self.bn3(self.conv3(out)))
         out = out.view(out.size(0), -1)

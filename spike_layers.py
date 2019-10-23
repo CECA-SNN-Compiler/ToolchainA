@@ -8,14 +8,24 @@ from torch.nn.modules.utils import _pair
 from torch.nn import init
 import math
 
-debug_compare=True
+
+class LayerManager():
+    def __init__(self):
+        self.debug_compare=False
+
+manager=LayerManager()
 
 class SpikeModule(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.spike_mode=False
+
     def set_spike_mode(self):
         for m in self.modules():
             if hasattr(m,'scale_weights'):
                 m.scale_weights()
                 m.spike_mode = True
+        self.spike_mode=True
 
     def set_reset_mode(self,mode):
         for m in self.modules():
@@ -62,8 +72,9 @@ class SpikeConv2d(BaseSpikeLayer):
         self.process_input_im=process_input_im
         self.reset_mode=reset_mode
 
-    def forward(self,x:SpikeTensor):
+    def forward(self,x):
         if self.spike_mode:
+            assert isinstance(x,SpikeTensor)
             out = F.conv2d(x.data, self.weight_scaled, self.bias_scaled, self.stride, self.padding, self.dilation, self.groups)
             chw=out.size()[1:]
             out_s=out.view(-1,x.timesteps,*chw)
@@ -81,7 +92,7 @@ class SpikeConv2d(BaseSpikeLayer):
                 spikes.append(spike)
 
             out=SpikeTensor(torch.cat(spikes,0),x.timesteps,self.out_scale_factor)
-            if debug_compare:
+            if manager.debug_compare:
                 float_out=F.conv2d(x.data[:out_s.size(0)], self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
                 spike_out=out.to_float()
                 diff=float_out-spike_out
@@ -89,10 +100,9 @@ class SpikeConv2d(BaseSpikeLayer):
                 print(float_out.mean(-1).mean(-1).mean(0))
                 print(spike_out.mean(-1).mean(-1).mean(0))
         else:
-            out = F.conv2d(x.data, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+            out = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
             self.activations_pool.append(out)
-            self.inputs_pool.append(x.data)
-            out = SpikeTensor(out, x.timesteps,is_spike=False)
+            self.inputs_pool.append(x)
         return out
 
     def scale_weights(self):
@@ -114,11 +124,6 @@ class SpikeConv2d(BaseSpikeLayer):
             self.bias.data=self.bias/out_scale.mean()
         self.activations_pool.clear()
         self.inputs_pool.clear()
-
-
-class SpikeBatchNorm2d(BaseSpikeLayer):
-    def __init__(self):
-        super().__init__()
 
 
 class SpikeLinear(BaseSpikeLayer):
@@ -206,3 +211,25 @@ class SpikeLinear(BaseSpikeLayer):
         return 'in_features={}, out_features={}, bias={}'.format(
             self.in_features, self.out_features, self.bias is not None
         )
+
+
+def spike_pooling(x,kernel_size, stride=None, padding=0,mode='max'):
+    assert isinstance(x,SpikeTensor)
+    if mode=='max':
+        # TODO: Optimize
+        firing_ratio=x.firing_ratio()
+        _,ind=F.max_pool2d(firing_ratio,kernel_size,stride,padding,return_indices=True)
+        outh,outw=ind.size()[-2:]
+        _x=x.timestep_dim_tensor()
+        b,t,c,h,w=_x.size()
+        _x=_x.view(b,t,c,-1)
+        ind=ind.view(b,1,c,-1).repeat_interleave(t,1)
+        out=_x.gather(-1,ind)
+        out=out.view(b*t,c,outh,outw)
+    elif mode=='avg':
+        # TODO: Real AVG POOLING
+        out = F.avg_pool2d(x.data, kernel_size, stride, padding)
+        raise NotImplementedError
+    else:
+        raise NotImplementedError
+    return SpikeTensor(out,x.timesteps,scale_factor=x.scale_factor)

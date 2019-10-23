@@ -139,10 +139,11 @@ def get_dataset(args):
         np.random.shuffle(rand_inds)
         val_set=set(root, train=True, download=True, transform=transform_test)
         train_set=set(root, train=True, download=True, transform=transform_train)
-        train_set.data=train_set.data[500:]
-        train_set.targets=train_set.targets[500:]
-        val_set.data=val_set.data[:500]
-        val_set.targets=val_set.targets[:500]
+        n_val=50
+        train_set.data=train_set.data[n_val:]
+        train_set.targets=train_set.targets[n_val:]
+        val_set.data=val_set.data[:n_val]
+        val_set.targets=val_set.targets[:n_val]
 
         train_val_loader=torch.utils.data.DataLoader(
             train_val_set, batch_size=args.batch_size, shuffle=True, drop_last=True, **kwargs
@@ -150,7 +151,7 @@ def get_dataset(args):
         train_loader = torch.utils.data.DataLoader(
             train_set, batch_size=args.batch_size, shuffle=True, drop_last=True, **kwargs)
         val_loader=torch.utils.data.DataLoader(
-            val_set, batch_size=args.batch_size, shuffle=False, drop_last=True, **kwargs)
+            val_set, batch_size=args.test_batch_size, shuffle=False, drop_last=True, **kwargs)
         test_loader = torch.utils.data.DataLoader(
             set(root, train=False, transform=transform_test),
             batch_size=args.test_batch_size, shuffle=False, **kwargs)

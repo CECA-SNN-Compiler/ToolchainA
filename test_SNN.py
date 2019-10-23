@@ -50,7 +50,7 @@ def accuracy(output, target, topk=(1,)):
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
 
-def validate(spike_mode, test_loader, model, device, criterion, epoch, train_writer=None):
+def validate(test_loader, model, device, criterion, epoch, train_writer=None,spike_mode=False):
     """Perform validation on the validation set"""
     batch_time = AverageMeter()
     losses = AverageMeter()
@@ -66,8 +66,8 @@ def validate(spike_mode, test_loader, model, device, criterion, epoch, train_wri
             data, target = data_test
 
             data = data.to(device)
-            data=SpikeTensor(data,args.timesteps,False)
             if spike_mode:
+                data = SpikeTensor(data, args.timesteps, False)
                 data.input_replica()
                 data.is_spike=True
 
@@ -98,26 +98,36 @@ def validate(spike_mode, test_loader, model, device, criterion, epoch, train_wri
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
     parser.add_argument('--base_lr', default=0.05, type=float, help='learning rate')
-    # parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
-    parser.add_argument('--resume', '-r', default="checkpoint/testnet_original_e10T2026_original.pth", help='resume from checkpoint')
-    # parser.add_argument('--resume', '-r', default="checkpoint/testnet2_original_e10T1342_original.pth", help='resume from checkpoint')
+    parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
     parser.add_argument('--batch_size', default=256, type=int)
     parser.add_argument('--test_batch_size', default=1, type=int)
-    parser.add_argument('--timesteps', default=1000, type=int)
+    parser.add_argument('--timesteps', default=100, type=int)
     parser.add_argument('--input_poisson', action='store_true')
     parser.add_argument('--Vthr', default=1,type=float)
     parser.add_argument('--reset_mode', default='zero',type=str)
     parser.add_argument('--epochs', default=90, type=int)
     parser.add_argument('--half', default=False, type=bool)
+    parser.add_argument('--debug_compare', default=False, type=bool)
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
+
+    from models.testnet import TestNetOriginal
+    net_ori=TestNetOriginal().cuda()
+    if args.resume:
+        net_ori.load_state_dict(torch.load(args.resume),False)
+
+    validate(val_loader,net_ori,torch.device('cuda'),nn.CrossEntropyLoss(),0,spike_mode=False)
+
+
     from models.testnet import TestNet
     net = TestNet().cuda()
-    # from models.testnet2 import TestNet
-    # net = TestNet().cuda()
-
+    net.eval()
     net.set_reset_mode(args.reset_mode)
+
+    from spike_layers import manager
+    if args.debug_compare:
+        manager.debug_compare=True
 
     if args.input_poisson:
         assert NotImplementedError
@@ -126,12 +136,10 @@ if __name__=='__main__':
         net.conv1.process_input_im=True
     if args.resume:
         net.load_state_dict(torch.load(args.resume),False)
-    net.eval()
+    # fuse the conv and bn
     net.conv1=fuse_conv_bn_eval(net.conv1,net.bn1)
-    net.conv2=fuse_conv_bn_eval(net.conv2,net.bn1)
-    validate(False,train_val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
-
+    net.conv2=fuse_conv_bn_eval(net.conv2,net.bn2)
+    # validate to get the stat for scale factor
+    validate(val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0,spike_mode=False)
     net.set_spike_mode()
-    # net.conv1.scale_weights()
-    validate(True,val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
-    # validate(False,val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
+    validate(val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0,spike_mode=True)
