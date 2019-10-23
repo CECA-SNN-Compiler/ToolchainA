@@ -1,5 +1,4 @@
 from datasets import get_dataset
-from models.testnet import TestNet
 import argparse
 import torch
 import numpy as np
@@ -101,31 +100,38 @@ if __name__=='__main__':
     parser.add_argument('--base_lr', default=0.05, type=float, help='learning rate')
     # parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
     parser.add_argument('--resume', '-r', default="checkpoint/testnet_original_e10T2026_original.pth", help='resume from checkpoint')
-    parser.add_argument('--batch_size', default=16, type=int)
-    parser.add_argument('--test_batch_size', default=2, type=int)
+    # parser.add_argument('--resume', '-r', default="checkpoint/testnet2_original_e10T1342_original.pth", help='resume from checkpoint')
+    parser.add_argument('--batch_size', default=256, type=int)
+    parser.add_argument('--test_batch_size', default=1, type=int)
     parser.add_argument('--timesteps', default=1000, type=int)
     parser.add_argument('--input_poisson', action='store_true')
     parser.add_argument('--Vthr', default=1,type=float)
-    parser.add_argument('--reset_mode', default='subtraction',type=str)
+    parser.add_argument('--reset_mode', default='zero',type=str)
     parser.add_argument('--epochs', default=90, type=int)
     parser.add_argument('--half', default=False, type=bool)
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
+    from models.testnet import TestNet
     net = TestNet().cuda()
+    # from models.testnet2 import TestNet
+    # net = TestNet().cuda()
 
     net.set_reset_mode(args.reset_mode)
 
-    if not args.input_poisson:
-        net.conv1.process_input_im=True
-    else:
+    if args.input_poisson:
         assert NotImplementedError
+    else:
+        # net.fc1.process_input_im=True
+        net.conv1.process_input_im=True
     if args.resume:
         net.load_state_dict(torch.load(args.resume),False)
     net.eval()
     net.conv1=fuse_conv_bn_eval(net.conv1,net.bn1)
-    net.conv1.Vthr = args.Vthr
-    validate(False,val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
+    net.conv2=fuse_conv_bn_eval(net.conv2,net.bn1)
+    validate(False,train_val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
 
     net.set_spike_mode()
+    # net.conv1.scale_weights()
     validate(True,val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)
+    # validate(False,val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0)

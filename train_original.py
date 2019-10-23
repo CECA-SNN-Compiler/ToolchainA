@@ -25,7 +25,7 @@ parser.add_argument('--batch_size', default=128,type=int)
 parser.add_argument('--test_batch_size', default=512,type=int)
 parser.add_argument('--config_name',default='testnet')
 parser.add_argument('--actions',default='',type=str)
-parser.add_argument('--epochs',default=10,type=int)
+parser.add_argument('--epochs',default=100,type=int)
 parser.add_argument('--parallel',default=False)
 parser.add_argument('--weight_decay',default=1e-4,type=float)
 parser.add_argument('--alpha',default=1,type=float)
@@ -66,8 +66,11 @@ config_name=args.config_name
 
 # build network
 
-if 'testnet' in config_name:
+if 'testnet' == config_name:
     from models.testnet import TestNetOriginal
+    net=TestNetOriginal(dataset=args.dataset)
+if 'testnet2'==config_name:
+    from models.testnet2 import TestNetOriginal
     net=TestNetOriginal(dataset=args.dataset)
 
 model_name=config_name

@@ -2,35 +2,50 @@ import torch.nn as nn
 import torch.nn.functional as F
 from spike_layers import *
 
+class TestNetFake(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 16, 5)
+        self.conv2 = nn.Conv2d(16, 32, 3)
+        self.conv3 = nn.Conv2d(32, 32, 3)
+        self.fc1 = nn.Linear(4*4*32, 10)
+
+    def forward(self, x):
+        out=self.conv1(x)
+        out = F.avg_pool2d(out, 2)
+        out = self.conv2(out)
+        out = F.avg_pool2d(out, 2)
+        out = self.conv3(out)
+        out = out.view(out.size(0), -1)
+        out = self.fc1(out)
+        return out
 
 class TestNetOriginal(nn.Module):
     def __init__(self,dataset="CIFAR10",scale=1):
         super().__init__()
         if dataset == "CIFAR10":
-            nunits_input = 3
             outputs = 10
             nuintis_fc = int(32 * scale) * 4*4
         elif dataset == "ImageNet":
-            nunits_input = 3
             outputs = 1000
             nuintis_fc = int(32 * scale) * 52 * 52
         else:
             raise NotImplementedError
 
-        self.conv1 = nn.Conv2d(nunits_input, int(16 * scale), 5)
-        self.bn1 = nn.BatchNorm2d(int(16 * scale))
-        self.conv2 = nn.Conv2d(int(16 * scale), int(32 * scale), 3)
-        self.bn2 = nn.BatchNorm2d(int(32 * scale))
-        self.conv3 = nn.Conv2d(int(32 * scale), int(32 * scale), 3)
-        self.bn3 = nn.BatchNorm2d(int(32 * scale))
+        self.conv1 = nn.Conv2d(3, 16, 5)
+        self.bn1 = nn.BatchNorm2d(16)
+        self.conv2 = nn.Conv2d(16, 32, 3)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.conv3 = nn.Conv2d(32, 32, 3)
+        self.bn3 = nn.BatchNorm2d(32)
         self.fc1 = nn.Linear(nuintis_fc, outputs)
 
     def forward(self, x):
         conv1_out=self.conv1(x)
         out = F.relu(self.bn1(conv1_out))
-        out = F.max_pool2d(out, 2)
+        out = F.avg_pool2d(out, 2)
         out = F.relu(self.bn2(self.conv2(out)))
-        out = F.max_pool2d(out, 2)
+        out = F.avg_pool2d(out, 2)
         out = F.relu(self.bn3(self.conv3(out)))
         out = out.view(out.size(0), -1)
         out = self.fc1(out)
@@ -52,7 +67,7 @@ class TestNet(SpikeModule):
 
         self.conv1 = SpikeConv2d(nunits_input, int(16 * scale), 5)
         self.bn1 = nn.BatchNorm2d(int(16 * scale))
-        self.conv2 = nn.Conv2d(int(16 * scale), int(32 * scale), 3)
+        self.conv2 = SpikeConv2d(int(16 * scale), int(32 * scale), 3)
         self.bn2 = nn.BatchNorm2d(int(32 * scale))
         self.conv3 = nn.Conv2d(int(32 * scale), int(32 * scale), 3)
         self.bn3 = nn.BatchNorm2d(int(32 * scale))
@@ -67,7 +82,7 @@ class TestNet(SpikeModule):
         out = F.relu(x)
         # out = F.relu(self.bn1(x))
         out = F.max_pool2d(out, 2)
-        out = F.relu(self.bn2(self.conv2(out)))
+        out = F.relu((self.conv2(out)))
         out = F.max_pool2d(out, 2)
         out = F.relu(self.bn3(self.conv3(out)))
         out = out.view(out.size(0), -1)

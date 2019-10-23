@@ -14,6 +14,9 @@ class SpikeTensor():
     def size(self,*args):
         return self.data.size(*args)
 
+    def view(self,*args):
+        return SpikeTensor(self.data.view(*args),self.timesteps,self.scale_factor,self.is_spike)
+
     def to_float(self):
         assert self.is_spike and self.scale_factor is not None
         chw=self.data.size()[1:]
