@@ -139,7 +139,7 @@ def get_dataset(args):
         np.random.shuffle(rand_inds)
         val_set=set(root, train=True, download=True, transform=transform_test)
         train_set=set(root, train=True, download=True, transform=transform_train)
-        n_val=50
+        n_val=5000
         train_set.data=train_set.data[n_val:]
         train_set.targets=train_set.targets[n_val:]
         val_set.data=val_set.data[:n_val]

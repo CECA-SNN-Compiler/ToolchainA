@@ -1,6 +1,8 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from spike_layers import *
+from utils import fuse_conv_bn_eval
+
 
 class TestNetFake(nn.Module):
     def __init__(self):
@@ -65,7 +67,7 @@ class TestNet(SpikeModule):
         else:
             raise NotImplementedError
 
-        self.conv1 = SpikeConv2d(nunits_input, int(16 * scale), 5)
+        self.conv1 = SpikeConv2d(nunits_input, int(16 * scale), 5,first_layer=True)
         self.bn1 = nn.BatchNorm2d(int(16 * scale))
         self.conv2 = SpikeConv2d(int(16 * scale), int(32 * scale), 3)
         # self.conv2 = nn.Conv2d(int(16 * scale), int(32 * scale), 3)
@@ -73,20 +75,24 @@ class TestNet(SpikeModule):
         self.conv3 = nn.Conv2d(int(32 * scale), int(32 * scale), 3)
         self.bn3 = nn.BatchNorm2d(int(32 * scale))
         self.fc1 = nn.Linear(nuintis_fc, outputs)
+    
+    def fuse_conv_bn(self):
+        self.conv1 = fuse_conv_bn_eval(self.conv1, self.bn1)
+        self.conv2 = fuse_conv_bn_eval(self.conv2, self.bn2)
 
     def forward(self, x):
         if self.spike_mode:
             out = self.conv1(x)
-            out = spike_pooling(out, 2,mode='max')
-            out=self.conv2(out)
+            # out = spike_pooling(out, 2,mode='max')
+            # out=self.conv2(out)
             out = out.to_float()
         else:
             out = F.relu(self.conv1(x))
-            out = F.max_pool2d(out, 2)
-            out = F.relu(self.conv2(out))
+            # out = F.max_pool2d(out, 2)
+            # out = F.relu(self.conv2(out))
 
-        # out = F.max_pool2d(out, 2)
-        # out = F.relu((self.conv2(out)))
+        out = F.max_pool2d(out, 2)
+        out = F.relu((self.conv2(out)))
 
         out = F.max_pool2d(out, 2)
         out = F.relu(self.bn3(self.conv3(out)))

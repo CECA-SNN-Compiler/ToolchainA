@@ -32,6 +32,9 @@ class SpikeModule(nn.Module):
             if hasattr(m,'reset_mode'):
                 m.reset_mode=mode
 
+    def fuse_conv_bn(self):
+        return
+
 
 class BaseSpikeLayer(nn.Module):
     def __init__(self):
@@ -39,9 +42,9 @@ class BaseSpikeLayer(nn.Module):
         self.spike_mode = False
 
 class SpikeConv2d(BaseSpikeLayer):
-    def __init__(self,in_channels, out_channels, kernel_size, stride=1,
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
                  padding=0, dilation=1, groups=1,
-                 bias=True, padding_mode='zeros',process_input_im=False,reset_mode='zero',fuse_bn=None):
+                 bias=True, padding_mode='zeros', first_layer=False, reset_mode='zero', fuse_bn=None):
         super().__init__()
         kernel_size = _pair(kernel_size)
         stride = _pair(stride)
@@ -69,7 +72,7 @@ class SpikeConv2d(BaseSpikeLayer):
         self.activations_pool=[]
         self.inputs_pool=[]
         self.out_scale_factor=Parameter(torch.Tensor(out_channels))
-        self.process_input_im=process_input_im
+        self.first_layer=first_layer
         self.reset_mode=reset_mode
 
     def forward(self,x):
@@ -114,7 +117,7 @@ class SpikeConv2d(BaseSpikeLayer):
         out_scale=torch.sort(activations,-1)[0][:,int(activations.size(1)*0.99)]
         in_scale=torch.sort(inputs,-1)[0][:,int(inputs.size(1)*0.99)]
         self.out_scale_factor.data=out_scale
-        if not self.process_input_im:
+        if not self.first_layer:
             self.weight_scaled.data= self.weight*in_scale.view(1, -1, 1, 1)/out_scale.view(-1,1,1,1)
         else:
             self.weight_scaled.data= self.weight/out_scale.view(-1,1,1,1)
@@ -129,7 +132,7 @@ class SpikeConv2d(BaseSpikeLayer):
 class SpikeLinear(BaseSpikeLayer):
     __constants__ = ['bias', 'in_features', 'out_features']
 
-    def __init__(self,in_features, out_features, bias=True,reset_mode='zero'):
+    def __init__(self,in_features, out_features, bias=True,reset_mode='zero',first_layer=False):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -146,6 +149,7 @@ class SpikeLinear(BaseSpikeLayer):
         self.activations_pool = []
         self.inputs_pool = []
         self.out_scale_factor = Parameter(torch.Tensor(out_features))
+        self.first_layer=first_layer
 
     def reset_parameters(self):
         init.kaiming_uniform_(self.weight, a=math.sqrt(5))
@@ -154,15 +158,15 @@ class SpikeLinear(BaseSpikeLayer):
             bound = 1 / math.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
 
-    def forward(self, x:SpikeTensor):
+    def forward(self, x):
         if self.spike_mode:
             out = F.linear(x.data, self.weight_scaled, self.bias_scaled)
             chw=out.size()[1:]
-            out_s=out.view(-1,x.timesteps,*chw)
-            memb_potential=torch.zeros(out_s.size(0),*chw).to(out_s.device)
+            out_s=out.view(x.timesteps,-1,*chw)
+            memb_potential=torch.zeros(out_s.size(1),*chw).to(out_s.device)
             spikes=[]
             for t in range(x.timesteps):
-                memb_potential+=self.Vthr*out_s[:,t]
+                memb_potential+=self.Vthr*out_s[t]
                 spike=(memb_potential>self.Vthr).float()
                 if self.reset_mode=='zero':
                     memb_potential*=(1- spike)
@@ -173,18 +177,18 @@ class SpikeLinear(BaseSpikeLayer):
                 spikes.append(spike)
 
             out=SpikeTensor(torch.cat(spikes,0),x.timesteps,self.out_scale_factor)
-            # if debug_compare:
-            #     float_out=F.relu(F.linear(x.data[:out_s.size(0)], self.weight, self.bias))
+            # if manager.debug_compare:
+            #     float_out=F.relu(F.linear(x.to_float(), self.weight, self.bias))
             #     spike_out=out.to_float()
             #     diff=float_out-spike_out
             #     print('diff',diff.mean(0))
             #     print('float',float_out.mean(0))
             #     print('spike',spike_out.mean(0))
+            #     print('Frac',diff.mean(0)/spike_out.mean(0))
         else:
-            out = F.linear(x.data, self.weight, self.bias)
+            out = F.linear(x, self.weight, self.bias)
             self.activations_pool.append(out)
             self.inputs_pool.append(x.data)
-            out = SpikeTensor(out, x.timesteps,is_spike=False)
         return out
 
     def scale_weights(self):
@@ -193,17 +197,17 @@ class SpikeLinear(BaseSpikeLayer):
         """
         activations = torch.cat(self.activations_pool, 0).transpose(0, 1).contiguous().view(self.out_features, -1)
         inputs = torch.cat(self.inputs_pool, 0).transpose(0, 1).contiguous().view(self.in_features, -1)
-        out_scale = torch.sort(activations, -1)[0][:, int(activations.size(1) * 0.99)]
-        in_scale = torch.sort(inputs, -1)[0][:, int(inputs.size(1) * 0.99)]
+        out_scale = torch.sort(activations, -1)[0][:, int(activations.size(1) * 0.999)]
+        in_scale = torch.sort(inputs, -1)[0][:, int(inputs.size(1) * 0.999)]
         self.out_scale_factor.data = out_scale
-        if not self.process_input_im:
+        if not self.first_layer:
             self.weight_scaled.data = self.weight * in_scale.view(1, -1) / out_scale.view(-1, 1)
         else:
             self.weight_scaled.data = self.weight / out_scale.view(-1, 1)
-            self.weight.data = self.weight / out_scale.mean()
+            # self.weight.data = self.weight / out_scale.mean()
         if self.bias is not None:
             self.bias_scaled.data = self.bias / out_scale
-            self.bias.data = self.bias / out_scale.mean()
+            # self.bias.data = self.bias / out_scale.mean()
         self.activations_pool.clear()
         self.inputs_pool.clear()
 

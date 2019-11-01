@@ -5,37 +5,36 @@ def Poission_generate(float_tensor,timesteps):
     return SpikeTensor()
 
 class SpikeTensor():
-    def __init__(self,data,timesteps,scale_factor=None,is_spike=True):
+    def __init__(self,data,timesteps,scale_factor):
         """
-        data shape: [batch*t,...]
+        data shape: [t*batch,...]
         """
         self.data=data
         self.timesteps=timesteps
-        self.is_spike=is_spike
-        self.scale_factor=scale_factor
+        self.b = self.data.size(0) // timesteps
+        self.chw = self.data.size()[1:]
+        if isinstance(scale_factor, torch.Tensor):
+            self.scale_factor=scale_factor.view( 1,-1,*([1]*(len(self.chw)-1)) )
+        else:
+            self.scale_factor=scale_factor
 
 
     def firing_ratio(self):
         chw = self.data.size()[1:]
-        firing_ratio = torch.mean(self.data.view(-1, self.timesteps, *chw), 1)
+        firing_ratio = torch.mean(self.data.view(self.timesteps, -1, *chw), 0)
         return firing_ratio
 
     def timestep_dim_tensor(self):
-        chw = self.data.size()[1:]
-        return self.data.view(-1,self.timesteps,*chw)
+        return self.data.view(self.timesteps,-1,*self.chw)
 
     def size(self,*args):
         return self.data.size(*args)
 
     def view(self,*args):
-        return SpikeTensor(self.data.view(*args),self.timesteps,self.scale_factor,self.is_spike)
+        return SpikeTensor(self.data.view(*args),self.timesteps,self.scale_factor)
 
     def to_float(self):
-        assert self.is_spike and self.scale_factor is not None
-        chw=self.data.size()[1:]
+        assert self.scale_factor is not None
         float_tensor=self.firing_ratio()
-        float_tensor*=self.scale_factor.view(1,-1,*([1]*(len(chw)-1)))
-        return float_tensor
-
-    def input_replica(self):
-        self.data=torch.repeat_interleave(self.data.unsqueeze(1),self.timesteps,1).view(-1,*self.data.size()[1:])
+        scaled_float_tensor=float_tensor*self.scale_factor
+        return scaled_float_tensor

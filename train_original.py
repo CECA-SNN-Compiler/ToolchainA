@@ -19,26 +19,18 @@ import re
 np.set_printoptions(3)
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR Training')
-parser.add_argument('--base_lr', default=0.1, type=float, help='learning rate')
+parser.add_argument('--base_lr', default=0.01, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
 parser.add_argument('--batch_size', default=128,type=int)
 parser.add_argument('--test_batch_size', default=512,type=int)
-parser.add_argument('--config_name',default='testnet')
+parser.add_argument('--config_name',default='testnet2')
 parser.add_argument('--actions',default='',type=str)
-parser.add_argument('--epochs',default=15,type=int)
+parser.add_argument('--epochs',default=30,type=int)
 parser.add_argument('--parallel',default=False)
 parser.add_argument('--weight_decay',default=1e-4,type=float)
-parser.add_argument('--alpha',default=1,type=float)
-parser.add_argument('--omega',default=-0.08,type=float)
+parser.add_argument('--half',default=0,type=bool)
 parser.add_argument('--scale',default=-1,type=float)
-parser.add_argument('--adam',default=False,type=bool)
-parser.add_argument('--loss_type',default='o',type=str)
-parser.add_argument('--kd_lam',default=0.9,type=float)
-parser.add_argument('--kd_T',default=15,type=float)
-parser.add_argument('--half',default=False,type=bool)
-parser.add_argument('--search_omega',default=True,type=bool)
 parser.add_argument('--gpu',default=-1,type=int)
-parser.add_argument('--nesterov',action='store_true')
 
 args = parser.parse_args()
 args.dataset='CIFAR100' if '100' in args.config_name else 'CIFAR10'
@@ -70,8 +62,8 @@ if 'testnet' == config_name:
     from models.testnet import TestNetOriginal
     net=TestNetOriginal(dataset=args.dataset)
 if 'testnet2'==config_name:
-    from models.testnet2 import TestNetOriginal
-    net=TestNetOriginal(dataset=args.dataset)
+    from models.testnet2 import TestNet2Original
+    net=TestNet2Original(dataset=args.dataset)
 
 model_name=config_name
 log_name=f'/{model_name}_original_e{args.epochs}'
@@ -92,8 +84,8 @@ if args.resume:
 
 criterion = nn.CrossEntropyLoss()
 is_warm_up=True if 'resnet110' in config_name else False
-optimizer=torch.optim.SGD(net.parameters(),1e-4,0.9,weight_decay=1e-4)
-lr_scheduler=torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,args.epochs,0)
+optimizer=torch.optim.SGD(net.parameters(),args.base_lr,0.9,weight_decay=args.weight_decay)
+lr_scheduler=torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,args.epochs,1e-5)
 
 
 def train(epoch):
