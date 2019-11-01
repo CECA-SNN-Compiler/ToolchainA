@@ -227,9 +227,9 @@ def spike_pooling(x,kernel_size, stride=None, padding=0,mode='max'):
         _,ind=F.max_pool2d(firing_ratio,kernel_size,stride,padding,return_indices=True)
         outh,outw=ind.size()[-2:]
         _x=x.timestep_dim_tensor()
-        b,t,c,h,w=_x.size()
-        _x=_x.view(b,t,c,-1)
-        ind=ind.view(b,1,c,-1).repeat_interleave(t,1)
+        t,b,c,h,w=_x.size()
+        _x=_x.view(t,b,c,-1)
+        ind=ind.view(1,b,c,-1).repeat_interleave(t,0)
         out=_x.gather(-1,ind)
         out=out.view(b*t,c,outh,outw)
     elif mode=='avg':
