@@ -19,11 +19,11 @@ import re
 np.set_printoptions(3)
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR Training')
-parser.add_argument('--base_lr', default=0.01, type=float, help='learning rate')
+parser.add_argument('--base_lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
 parser.add_argument('--batch_size', default=128,type=int)
 parser.add_argument('--test_batch_size', default=512,type=int)
-parser.add_argument('--config_name',default='testnet2')
+parser.add_argument('--config_name',default='testnet')
 parser.add_argument('--actions',default='',type=str)
 parser.add_argument('--epochs',default=30,type=int)
 parser.add_argument('--parallel',default=False)
@@ -59,8 +59,8 @@ config_name=args.config_name
 # build network
 
 if 'testnet' == config_name:
-    from models.testnet import TestNetOriginal
-    net=TestNetOriginal(dataset=args.dataset)
+    from models.testnet import TestNet
+    net=TestNet(dataset=args.dataset)
 if 'testnet2'==config_name:
     from models.testnet2 import TestNet2Original
     net=TestNet2Original(dataset=args.dataset)

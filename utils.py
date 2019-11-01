@@ -3,7 +3,11 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 import copy
 import torch
+import torch.nn as nn
 
+class Identity(nn.Module):
+    def __call__(self,x):
+        return x
 
 def fuse_conv_bn_eval(conv, bn):
     assert(not (conv.training or bn.training)), "Fusion only for eval!"
@@ -26,5 +30,5 @@ def fuse_conv_bn_eval(conv, bn):
 
     fused_conv.weight = torch.nn.Parameter(w_conv)
     fused_conv.bias = torch.nn.Parameter(b_conv)
-
-    return fused_conv
+    identity_bn=Identity()
+    return fused_conv,identity_bn

@@ -80,11 +80,11 @@ class SpikeConv2d(BaseSpikeLayer):
             assert isinstance(x,SpikeTensor)
             out = F.conv2d(x.data, self.weight_scaled, self.bias_scaled, self.stride, self.padding, self.dilation, self.groups)
             chw=out.size()[1:]
-            out_s=out.view(-1,x.timesteps,*chw)
-            memb_potential=torch.zeros(out_s.size(0),*chw).to(out_s.device)
+            out_s=out.view(x.timesteps,-1,*chw)
+            memb_potential=torch.zeros(out_s.size(1),*chw).to(out_s.device)
             spikes=[]
             for t in range(x.timesteps):
-                memb_potential+=self.Vthr*out_s[:,t]
+                memb_potential+=self.Vthr*out_s[t]
                 spike=(memb_potential>self.Vthr).float()
                 if self.reset_mode=='zero':
                     memb_potential*=(1- spike)
@@ -96,15 +96,17 @@ class SpikeConv2d(BaseSpikeLayer):
 
             out=SpikeTensor(torch.cat(spikes,0),x.timesteps,self.out_scale_factor)
             if manager.debug_compare:
-                float_out=F.conv2d(x.data[:out_s.size(0)], self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+                float_out=F.conv2d(x.to_float(), self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+                float_out=F.relu(float_out)
                 spike_out=out.to_float()
                 diff=float_out-spike_out
-                print(diff.mean(-1).mean(-1).mean(0))
-                print(float_out.mean(-1).mean(-1).mean(0))
-                print(spike_out.mean(-1).mean(-1).mean(0))
+                print('diff', diff.mean(0))
+                print('float', float_out.mean(0))
+                print('spike', spike_out.mean(0))
+                print('Frac', diff.mean(0) / (spike_out.mean(0)+1e-8))
         else:
             out = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-            self.activations_pool.append(out)
+            self.activations_pool.append(F.relu(out))
             self.inputs_pool.append(x)
         return out
 
@@ -177,18 +179,18 @@ class SpikeLinear(BaseSpikeLayer):
                 spikes.append(spike)
 
             out=SpikeTensor(torch.cat(spikes,0),x.timesteps,self.out_scale_factor)
-            # if manager.debug_compare:
-            #     float_out=F.relu(F.linear(x.to_float(), self.weight, self.bias))
-            #     spike_out=out.to_float()
-            #     diff=float_out-spike_out
-            #     print('diff',diff.mean(0))
-            #     print('float',float_out.mean(0))
-            #     print('spike',spike_out.mean(0))
-            #     print('Frac',diff.mean(0)/spike_out.mean(0))
+            if manager.debug_compare:
+                float_out=F.relu(F.linear(x.to_float(), self.weight, self.bias))
+                spike_out=out.to_float()
+                diff=float_out-spike_out
+                print('diff',diff.mean(0))
+                print('float',float_out.mean(0))
+                print('spike',spike_out.mean(0))
+                print('Frac',diff.mean(0)/spike_out.mean(0))
         else:
             out = F.linear(x, self.weight, self.bias)
             self.activations_pool.append(out)
-            self.inputs_pool.append(x.data)
+            self.inputs_pool.append(F.relu(x.data))
         return out
 
     def scale_weights(self):
@@ -197,8 +199,8 @@ class SpikeLinear(BaseSpikeLayer):
         """
         activations = torch.cat(self.activations_pool, 0).transpose(0, 1).contiguous().view(self.out_features, -1)
         inputs = torch.cat(self.inputs_pool, 0).transpose(0, 1).contiguous().view(self.in_features, -1)
-        out_scale = torch.sort(activations, -1)[0][:, int(activations.size(1) * 0.999)]
-        in_scale = torch.sort(inputs, -1)[0][:, int(inputs.size(1) * 0.999)]
+        out_scale = torch.sort(activations, -1)[0][:, int(activations.size(1) * 0.999)]+1e-8
+        in_scale = torch.sort(inputs, -1)[0][:, int(inputs.size(1) * 0.999)]+1e-8
         self.out_scale_factor.data = out_scale
         if not self.first_layer:
             self.weight_scaled.data = self.weight * in_scale.view(1, -1) / out_scale.view(-1, 1)
