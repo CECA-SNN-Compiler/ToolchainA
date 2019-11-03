@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import time
 import torch.nn as nn
-from spike_tensor import SpikeTensor
+from spike_tensor import SpikeTensor,DebugTensor
 import GPUtil
 import os
 from spike_layers import manager
@@ -61,15 +61,16 @@ def validate(test_loader, model, device, criterion, epoch, train_writer=None,spi
         for batch_i,data_test in enumerate(test_loader):
             if batch_i==iters:break
             data, target = data_test
-
-            data = data.to(device)
+            data=data.to(device)
+            raw_data = data
             if spike_mode:
                 if args.input_poisson:
                     assert NotImplementedError
                 else:
-                    replica_data=torch.cat([data for _ in range(args.timesteps)],0)
+                    replica_data=torch.cat([raw_data for _ in range(args.timesteps)],0)
                     data = SpikeTensor(replica_data, args.timesteps,scale_factor=1)
-
+                if args.debug_compare:
+                    data=DebugTensor(data,raw_data)
             output = model(data)
 
             target = target.to(device)
@@ -105,7 +106,7 @@ if __name__=='__main__':
     parser.add_argument('--Vthr', default=1.2,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
     parser.add_argument('--half', default=False, type=bool)
-    parser.add_argument('--debug_compare', default=1, type=bool)
+    parser.add_argument('--debug_compare', default=0, type=bool)
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
@@ -115,8 +116,7 @@ if __name__=='__main__':
     net.set_reset_mode(args.reset_mode)
     net.set_Vthr(args.Vthr)
 
-    if args.debug_compare:
-        manager.debug_compare=True
+
     if args.resume:
         net.load_state_dict(torch.load(args.resume),False)
     # fuse the conv and bn
@@ -125,6 +125,8 @@ if __name__=='__main__':
     # validate to get the stat for scale factor
     raw_acc,_=validate(val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0,spike_mode=False)
     net.set_spike_mode()
+    if args.debug_compare:
+        manager.debug_compare=True
     accs=[]
     Xs=np.arange(1,9,1)
     for timesteps in 2**Xs:

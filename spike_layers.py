@@ -16,6 +16,7 @@ class LayerManager():
 
 manager=LayerManager()
 
+
 class SpikeModule(nn.Module):
     def __init__(self):
         super().__init__()
@@ -81,43 +82,58 @@ class SpikeConv2d(BaseSpikeLayer):
         self.first_layer=first_layer
         self.reset_mode=reset_mode
 
-    def forward(self,x):
-        if self.spike_mode:
-            assert isinstance(x,SpikeTensor)
-            out = F.conv2d(x.data, self.weight_scaled, self.bias_scaled, self.stride, self.padding, self.dilation, self.groups)
-            chw=out.size()[1:]
-            out_s=out.view(x.timesteps,-1,*chw)
-            memb_potential=torch.zeros(out_s.size(1),*chw).to(out_s.device)
-            spikes=[]
-            for t in range(x.timesteps):
-                memb_potential+=self.Vthr*out_s[t]
-                spike=(memb_potential>self.Vthr).float()
-                if self.reset_mode=='zero':
-                    memb_potential*=(1- spike)
-                elif self.reset_mode=='subtraction':
-                    memb_potential-=spike*self.Vthr
-                else:
-                    raise NotImplementedError
-                spikes.append(spike)
+    def forward_compare(self,x):
+        assert isinstance(x, DebugTensor)
+        spike_out=self.forward_spike(x.x_spike)
+        float_out=self.forward_float(x.x_float)
+        if manager.debug_compare:
+            float_out = F.relu(float_out)
+            _spike_out=spike_out.to_float()
+            diff = float_out - _spike_out
+            print('diff', diff.mean(0).mean(-1).mean(-1))
+            print('float', float_out.mean(0).mean(-1).mean(-1))
+            print('spike', _spike_out.mean(0).mean(-1).mean(-1))
+            fracs = (diff.mean(0) / (_spike_out.mean(0) + 1e-8)).mean(-1).mean(-1)
+            print('Frac', fracs)
+            manager.debug_fracs[self] = fracs
+            print('MaxError', fracs.max())
+        return DebugTensor(spike_out,float_out)
 
-            out=SpikeTensor(torch.cat(spikes,0),x.timesteps,self.out_scale_factor)
-            if manager.debug_compare:
-                float_out=F.conv2d(x.to_float(), self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-                float_out=F.relu(float_out)
-                spike_out=out.to_float()
-                diff=float_out-spike_out
-                print('diff', diff.mean(0).mean(-1).mean(-1))
-                print('float', float_out.mean(0).mean(-1).mean(-1))
-                print('spike', spike_out.mean(0).mean(-1).mean(-1))
-                fracs=(diff.mean(0) / (spike_out.mean(0)+1e-8)).mean(-1).mean(-1)
-                print('Frac', fracs)
-                manager.debug_fracs[self]=fracs
-                print('MaxError', fracs.max())
-        else:
-            out = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-            self.activations_pool.append(F.relu(out))
-            self.inputs_pool.append(x)
+    def forward_spike(self,x):
+        assert isinstance(x, SpikeTensor)
+        out = F.conv2d(x.data, self.weight_scaled, self.bias_scaled, self.stride, self.padding, self.dilation,
+                       self.groups)
+        chw = out.size()[1:]
+        out_s = out.view(x.timesteps, -1, *chw)
+        memb_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
+        spikes = []
+        for t in range(x.timesteps):
+            memb_potential += self.Vthr * out_s[t]
+            spike = (memb_potential > self.Vthr).float()
+            if self.reset_mode == 'zero':
+                memb_potential *= (1 - spike)
+            elif self.reset_mode == 'subtraction':
+                memb_potential -= spike * self.Vthr
+            else:
+                raise NotImplementedError
+            spikes.append(spike)
+
+        out = SpikeTensor(torch.cat(spikes, 0), x.timesteps, self.out_scale_factor)
         return out
+
+    def forward_float(self,x):
+        out = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        self.activations_pool.append(F.relu(out))
+        self.inputs_pool.append(x)
+        return out
+
+    def forward(self,x):
+        if manager.debug_compare:
+            return self.forward_compare(x)
+        if self.spike_mode:
+            return self.forward_spike(x)
+        else:
+            return self.forward_float(x)
 
     def scale_weights(self):
         """
@@ -167,41 +183,56 @@ class SpikeLinear(BaseSpikeLayer):
             bound = 1 / math.sqrt(fan_in)
             init.uniform_(self.bias, -bound, bound)
 
-    def forward(self, x):
-        if self.spike_mode:
-            out = F.linear(x.data, self.weight_scaled, self.bias_scaled)
-            chw=out.size()[1:]
-            out_s=out.view(x.timesteps,-1,*chw)
-            memb_potential=torch.zeros(out_s.size(1),*chw).to(out_s.device)
-            spikes=[]
-            for t in range(x.timesteps):
-                memb_potential+=self.Vthr*out_s[t]
-                spike=(memb_potential>self.Vthr).float()
-                if self.reset_mode=='zero':
-                    memb_potential*=(1- spike)
-                elif self.reset_mode=='subtraction':
-                    memb_potential-=spike*self.Vthr
-                else:
-                    raise NotImplementedError
-                spikes.append(spike)
+    def forward_spike(self,x):
+        out = F.linear(x.data, self.weight_scaled, self.bias_scaled)
+        chw = out.size()[1:]
+        out_s = out.view(x.timesteps, -1, *chw)
+        memb_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
+        spikes = []
+        for t in range(x.timesteps):
+            memb_potential += self.Vthr * out_s[t]
+            spike = (memb_potential > self.Vthr).float()
+            if self.reset_mode == 'zero':
+                memb_potential *= (1 - spike)
+            elif self.reset_mode == 'subtraction':
+                memb_potential -= spike * self.Vthr
+            else:
+                raise NotImplementedError
+            spikes.append(spike)
 
-            out=SpikeTensor(torch.cat(spikes,0),x.timesteps,self.out_scale_factor)
-            if manager.debug_compare:
-                try:
-                    float_out=F.relu(F.linear(x.to_float(), self.weight, self.bias))
-                    spike_out=out.to_float()
-                    diff=float_out-spike_out
-                    print('diff',diff.mean(0))
-                    print('float',float_out.mean(0))
-                    print('spike',spike_out.mean(0))
-                    print('Frac',diff.mean(0)/spike_out.mean(0))
-                except:
-                    pass
-        else:
-            out = F.linear(x, self.weight, self.bias)
-            self.activations_pool.append(out)
-            self.inputs_pool.append(F.relu(x.data))
+        out = SpikeTensor(torch.cat(spikes, 0), x.timesteps, self.out_scale_factor)
         return out
+
+    def forward_float(self,x):
+        out = F.linear(x, self.weight, self.bias)
+        self.activations_pool.append(out)
+        self.inputs_pool.append(F.relu(x.data))
+        return out
+
+    def forward_compare(self,x):
+        assert isinstance(x, DebugTensor)
+
+        spike_out = self.forward_spike(x.x_spike)
+        float_out = self.forward_float(x.x_float)
+        if manager.debug_compare:
+            _spike_out=spike_out.to_float()
+            try:
+                diff = float_out - _spike_out
+                print('diff', diff.mean(0))
+                print('float', float_out.mean(0))
+                print('spike', _spike_out.mean(0))
+                print('Frac', diff.mean(0) / _spike_out.mean(0))
+            except:
+                pass
+        return DebugTensor(spike_out,float_out)
+
+    def forward(self, x):
+        if manager.debug_compare:
+            return self.forward_compare(x)
+        if self.spike_mode:
+            return self.forward_spike(x)
+        else:
+            return self.forward_float(x)
 
     def scale_weights(self):
         """
@@ -228,32 +259,25 @@ class SpikeLinear(BaseSpikeLayer):
             self.in_features, self.out_features, self.bias is not None
         )
 
-
-def spike_pooling(x,kernel_size, stride=None, padding=0,mode='max'):
-    assert isinstance(x,SpikeTensor)
-    if mode=='max':
-        # TODO: Optimize
-        firing_ratio=x.firing_ratio()
-        _,ind=F.max_pool2d(firing_ratio,kernel_size,stride,padding,return_indices=True)
-        outh,outw=ind.size()[-2:]
-        _x=x.timestep_dim_tensor()
-        t,b,c,h,w=_x.size()
-        _x=_x.view(t,b,c,-1)
-        ind=ind.view(1,b,c,-1)
-        inds=torch.cat([ind for _ in range(t)],0)
-        out=_x.gather(-1,inds)
-        out=out.view(b*t,c,outh,outw)
-        # DEBUG
-        if manager.debug_compare:
-            float_out=F.max_pool2d(x.to_float(),kernel_size,stride,padding)
-            spike_out=SpikeTensor(out,x.timesteps,scale_factor=x.scale_factor).to_float()
-            the_same=(spike_out==float_out).all()
-            2==2
-
-    elif mode=='avg':
-        # TODO: Real AVG POOLING
-        out = F.avg_pool2d(x.data, kernel_size, stride, padding)
-        raise NotImplementedError
+def spike_max_pooling(x,kernel_size, stride=None, padding=0):
+    if manager.debug_compare:
+        assert isinstance(x,DebugTensor)
+        x_spike,x_float=x.x_spike,x.x_float
+        float_out = F.max_pool2d(x_float, kernel_size, stride, padding)
     else:
-        raise NotImplementedError
-    return SpikeTensor(out,x.timesteps,scale_factor=x.scale_factor)
+        x_spike=x
+    firing_ratio = x_spike.firing_ratio()
+    _, ind = F.max_pool2d(firing_ratio, kernel_size, stride, padding, return_indices=True)
+    outh, outw = ind.size()[-2:]
+    _x = x_spike.timestep_dim_tensor()
+    t, b, c, h, w = _x.size()
+    _x = _x.view(t, b, c, -1)
+    ind = ind.view(1, b, c, -1)
+    inds = torch.cat([ind for _ in range(t)], 0)
+    out = _x.gather(-1, inds)
+    out = out.view(b * t, c, outh, outw)
+    spike_out=SpikeTensor(out,x_spike.timesteps,scale_factor=x_spike.scale_factor)
+    if manager.debug_compare:
+        return DebugTensor(spike_out,float_out)
+    else:
+        return spike_out

@@ -38,3 +38,17 @@ class SpikeTensor():
         float_tensor=self.firing_ratio()
         scaled_float_tensor=float_tensor*self.scale_factor
         return scaled_float_tensor
+
+class DebugTensor():
+    def __init__(self,x_spike,x_float):
+        self.x_spike=x_spike
+        self.x_float=x_float
+
+    def view(self,*args):
+        return DebugTensor(self.x_spike.view(*args),self.x_float.view(*args))
+
+    def size(self,*args):
+        return self.x_float.size(*args)
+
+    def to_float(self):
+        return self.x_spike.to_float()

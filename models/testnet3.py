@@ -14,11 +14,11 @@ class TestNet3(SpikeModule):
     def forward(self, x):
         if self.spike_mode:
             out = self.conv1(x)
-            out = spike_pooling(out, 2,mode='max')
+            out = spike_max_pooling(out, 2)
             out=self.conv2(out)
-            out = spike_pooling(out, 2,mode='max')
+            out = spike_max_pooling(out, 2)
             out = self.conv3(out)
-            out = out.view(out.size(0), -1)
+            out = out.view(-1, self.fc1.in_features)
             out = self.fc1(out)
             out = out.to_float()
         else:
