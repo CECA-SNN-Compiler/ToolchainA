@@ -8,6 +8,7 @@ from spike_tensor import SpikeTensor
 import GPUtil
 import os
 from spike_layers import manager
+from build_network import get_net_by_name
 
 min_mem_gpu = np.argmin([_.memoryUsed for _ in GPUtil.getGPUs()])
 print("selecting GPU {}".format(min_mem_gpu))
@@ -45,7 +46,7 @@ def accuracy(output, target, topk=(1,)):
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
 
-def validate(test_loader, model, device, criterion, epoch, train_writer=None,spike_mode=False):
+def validate(test_loader, model, device, criterion, epoch, train_writer=None,spike_mode=False,iters=-1):
     """Perform validation on the validation set"""
     batch_time = AverageMeter()
     losses = AverageMeter()
@@ -57,7 +58,8 @@ def validate(test_loader, model, device, criterion, epoch, train_writer=None,spi
 
     end = time.time()
     with torch.no_grad():
-        for data_test in test_loader:
+        for batch_i,data_test in enumerate(test_loader):
+            if batch_i==iters:break
             data, target = data_test
 
             data = data.to(device)
@@ -97,27 +99,21 @@ if __name__=='__main__':
     parser.add_argument('net_name',type=str)
     parser.add_argument('--base_lr', default=0.05, type=float, help='learning rate')
     parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
-    parser.add_argument('--batch_size', default=1, type=int)
+    parser.add_argument('--batch_size', default=100, type=int)
     parser.add_argument('--test_batch_size', default=100, type=int)
     parser.add_argument('--input_poisson', action='store_true')
-    parser.add_argument('--Vthr', default=1,type=float)
+    parser.add_argument('--Vthr', default=1.2,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
     parser.add_argument('--half', default=False, type=bool)
-    parser.add_argument('--debug_compare', default=0, type=bool)
+    parser.add_argument('--debug_compare', default=1, type=bool)
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
 
-    if args.net_name=='testnet':
-        from models.testnet import TestNet
-        net = TestNet()
-    elif args.net_name=='testnet2':
-        from models.testnet2 import TestNet2
-        net = TestNet2()
-    else:
-        raise NotImplementedError
+    net=get_net_by_name(args.net_name)
     net.cuda()
     net.set_reset_mode(args.reset_mode)
+    net.set_Vthr(args.Vthr)
 
     if args.debug_compare:
         manager.debug_compare=True
@@ -133,8 +129,11 @@ if __name__=='__main__':
     Xs=np.arange(1,9,1)
     for timesteps in 2**Xs:
         args.timesteps=timesteps
-        acc,loss=validate(val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0,spike_mode=True)
+        iters=1 if args.debug_compare else -1
+        acc,loss=validate(val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0,spike_mode=True,iters=iters)
         accs.append(acc)
+        if args.debug_compare:
+            print([__.abs().max().item() for _,__ in manager.debug_fracs.items()])
     import matplotlib.pyplot as plt
     plt.plot(Xs,accs,label='SNN')
     plt.hlines(raw_acc,Xs.min(),Xs.max(),linestyles='--',label='ANN')

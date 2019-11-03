@@ -12,6 +12,7 @@ import math
 class LayerManager():
     def __init__(self):
         self.debug_compare=False
+        self.debug_fracs={}
 
 manager=LayerManager()
 
@@ -19,6 +20,11 @@ class SpikeModule(nn.Module):
     def __init__(self):
         super().__init__()
         self.spike_mode=False
+
+    def set_Vthr(self,Vthr):
+        for m in self.modules():
+            if hasattr(m,'Vthr'):
+                m.Vthr=Vthr
 
     def set_spike_mode(self):
         for m in self.modules():
@@ -100,10 +106,13 @@ class SpikeConv2d(BaseSpikeLayer):
                 float_out=F.relu(float_out)
                 spike_out=out.to_float()
                 diff=float_out-spike_out
-                print('diff', diff.mean(0))
-                print('float', float_out.mean(0))
-                print('spike', spike_out.mean(0))
-                print('Frac', diff.mean(0) / (spike_out.mean(0)+1e-8))
+                print('diff', diff.mean(0).mean(-1).mean(-1))
+                print('float', float_out.mean(0).mean(-1).mean(-1))
+                print('spike', spike_out.mean(0).mean(-1).mean(-1))
+                fracs=(diff.mean(0) / (spike_out.mean(0)+1e-8)).mean(-1).mean(-1)
+                print('Frac', fracs)
+                manager.debug_fracs[self]=fracs
+                print('MaxError', fracs.max())
         else:
             out = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
             self.activations_pool.append(F.relu(out))
@@ -120,13 +129,11 @@ class SpikeConv2d(BaseSpikeLayer):
         in_scale=torch.sort(inputs,-1)[0][:,int(inputs.size(1)*0.99)]
         self.out_scale_factor.data=out_scale
         if not self.first_layer:
-            self.weight_scaled.data= self.weight*in_scale.view(1, -1, 1, 1)/out_scale.view(-1,1,1,1)
+            self.weight_scaled.data= self.weight.data*in_scale.view(1, -1, 1, 1)/out_scale.view(-1,1,1,1)
         else:
-            self.weight_scaled.data= self.weight/out_scale.view(-1,1,1,1)
-            self.weight.data= self.weight/out_scale.mean()
+            self.weight_scaled.data= self.weight.data/out_scale.view(-1,1,1,1)
         if self.bias is not None:
-            self.bias_scaled.data=self.bias/out_scale
-            self.bias.data=self.bias/out_scale.mean()
+            self.bias_scaled.data=self.bias.data/out_scale
         self.activations_pool.clear()
         self.inputs_pool.clear()
 
@@ -180,13 +187,16 @@ class SpikeLinear(BaseSpikeLayer):
 
             out=SpikeTensor(torch.cat(spikes,0),x.timesteps,self.out_scale_factor)
             if manager.debug_compare:
-                float_out=F.relu(F.linear(x.to_float(), self.weight, self.bias))
-                spike_out=out.to_float()
-                diff=float_out-spike_out
-                print('diff',diff.mean(0))
-                print('float',float_out.mean(0))
-                print('spike',spike_out.mean(0))
-                print('Frac',diff.mean(0)/spike_out.mean(0))
+                try:
+                    float_out=F.relu(F.linear(x.to_float(), self.weight, self.bias))
+                    spike_out=out.to_float()
+                    diff=float_out-spike_out
+                    print('diff',diff.mean(0))
+                    print('float',float_out.mean(0))
+                    print('spike',spike_out.mean(0))
+                    print('Frac',diff.mean(0)/spike_out.mean(0))
+                except:
+                    pass
         else:
             out = F.linear(x, self.weight, self.bias)
             self.activations_pool.append(out)
@@ -229,9 +239,17 @@ def spike_pooling(x,kernel_size, stride=None, padding=0,mode='max'):
         _x=x.timestep_dim_tensor()
         t,b,c,h,w=_x.size()
         _x=_x.view(t,b,c,-1)
-        ind=ind.view(1,b,c,-1).repeat_interleave(t,0)
-        out=_x.gather(-1,ind)
+        ind=ind.view(1,b,c,-1)
+        inds=torch.cat([ind for _ in range(t)],0)
+        out=_x.gather(-1,inds)
         out=out.view(b*t,c,outh,outw)
+        # DEBUG
+        if manager.debug_compare:
+            float_out=F.max_pool2d(x.to_float(),kernel_size,stride,padding)
+            spike_out=SpikeTensor(out,x.timesteps,scale_factor=x.scale_factor).to_float()
+            the_same=(spike_out==float_out).all()
+            2==2
+
     elif mode=='avg':
         # TODO: Real AVG POOLING
         out = F.avg_pool2d(x.data, kernel_size, stride, padding)

@@ -23,9 +23,9 @@ parser.add_argument('--base_lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
 parser.add_argument('--batch_size', default=128,type=int)
 parser.add_argument('--test_batch_size', default=512,type=int)
-parser.add_argument('--config_name',default='testnet')
+parser.add_argument('--config_name',default='testnet3')
 parser.add_argument('--actions',default='',type=str)
-parser.add_argument('--epochs',default=30,type=int)
+parser.add_argument('--epochs',default=90,type=int)
 parser.add_argument('--parallel',default=False)
 parser.add_argument('--weight_decay',default=1e-4,type=float)
 parser.add_argument('--half',default=0,type=bool)
@@ -61,9 +61,12 @@ config_name=args.config_name
 if 'testnet' == config_name:
     from models.testnet import TestNet
     net=TestNet(dataset=args.dataset)
-if 'testnet2'==config_name:
+elif 'testnet2'==config_name:
     from models.testnet2 import TestNet2Original
     net=TestNet2Original(dataset=args.dataset)
+elif 'testnet3'==config_name:
+    from models.testnet3 import TestNet3
+    net = TestNet3(dataset=args.dataset)
 
 model_name=config_name
 log_name=f'/{model_name}_original_e{args.epochs}'
