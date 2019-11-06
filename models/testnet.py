@@ -85,9 +85,9 @@ class TestNet(SpikeModule):
     def forward(self, x):
         if self.spike_mode:
             out = self.conv1(x)
-            out = spike_pooling(out, 2,mode='max')
+            out = spike_max_pooling(out, 2)
             out=self.conv2(out)
-            out = spike_pooling(out, 2,mode='max')
+            out = spike_max_pooling(out, 2)
             out = self.conv3(out)
             out = out.view(out.size(0), -1)
             out = self.fc1(out)

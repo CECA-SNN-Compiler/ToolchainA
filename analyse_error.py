@@ -101,7 +101,7 @@ if __name__=='__main__':
     parser.add_argument('--base_lr', default=0.05, type=float, help='learning rate')
     parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
     parser.add_argument('--batch_size', default=100, type=int)
-    parser.add_argument('--test_batch_size', default=100, type=int)
+    parser.add_argument('--test_batch_size', default=1, type=int)
     parser.add_argument('--input_poisson', action='store_true')
     parser.add_argument('--Vthr', default=1.2,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
@@ -137,11 +137,14 @@ if __name__=='__main__':
         if args.debug_compare:
             print([__.abs().max().item() for _,__ in manager.debug_fracs.items()])
     import matplotlib.pyplot as plt
+    import seaborn as sns
+    sns.set_style('whitegrid')
+    plt.figure(figsize=(4,3))
     plt.plot(Xs,accs,label='SNN')
     plt.hlines(raw_acc,Xs.min(),Xs.max(),linestyles='--',label='ANN')
     plt.xlabel('timesteps')
     plt.ylabel('accuracy')
     plt.xticks(Xs,2**Xs)
     plt.legend(loc='lower right')
-    plt.title(args.net_name)
+    # plt.title(args.net_name)
     plt.show()

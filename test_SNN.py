@@ -104,7 +104,7 @@ if __name__=='__main__':
     parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
     parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--test_batch_size', default=100, type=int)
-    parser.add_argument('--timesteps', default=100, type=int)
+    parser.add_argument('--timesteps', default=1, type=int)
     parser.add_argument('--input_poisson', action='store_true')
     parser.add_argument('--Vthr', default=1,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
