@@ -4,6 +4,7 @@ def Poission_generate(float_tensor,timesteps):
     raise NotImplementedError
     return SpikeTensor()
 
+
 class SpikeTensor():
     def __init__(self,data,timesteps,scale_factor):
         """
@@ -17,7 +18,6 @@ class SpikeTensor():
             self.scale_factor=scale_factor.view( 1,-1,*([1]*(len(self.chw)-1)) )
         else:
             self.scale_factor=scale_factor
-
 
     def firing_ratio(self):
         chw = self.data.size()[1:]
@@ -38,6 +38,7 @@ class SpikeTensor():
         float_tensor=self.firing_ratio()
         scaled_float_tensor=float_tensor*self.scale_factor
         return scaled_float_tensor
+
 
 class DebugTensor():
     def __init__(self,x_spike,x_float):

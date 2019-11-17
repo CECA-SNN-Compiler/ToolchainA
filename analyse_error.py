@@ -103,7 +103,7 @@ if __name__=='__main__':
     parser.add_argument('--batch_size', default=100, type=int)
     parser.add_argument('--test_batch_size', default=1, type=int)
     parser.add_argument('--input_poisson', action='store_true')
-    parser.add_argument('--Vthr', default=1.2,type=float)
+    parser.add_argument('--Vthr', default=1,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
     parser.add_argument('--half', default=False, type=bool)
     parser.add_argument('--debug_compare', default=0, type=bool)

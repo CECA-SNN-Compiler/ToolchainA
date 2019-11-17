@@ -10,7 +10,7 @@ cfg = {
 }
 
 
-class VGG16V1(SpikeModule):
+class VGG16V1(nn.Module):
     def __init__(self,dataset="CIFAR10",scale=1):
         super().__init__()
         if dataset=='CIFAR10':
@@ -55,3 +55,4 @@ class VGG16V1(SpikeModule):
 if __name__=='__main__':
     net=VGG16V1()
     x=torch.ones([1,3,32,32])
+    net(x)

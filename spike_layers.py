@@ -1,290 +1,70 @@
 import torch
 import torch.nn as nn
-from torch.nn import Parameter
 import torch.nn.functional as F
-from spike_tensor import *
-import numpy as np
+from torch.nn import Parameter
 from torch.nn.modules.utils import _pair
-from torch.nn import init
+from spike_tensor import SpikeTensor
 import math
 
+reset_mode='subtraction'
 
-class LayerManager():
-    def __init__(self):
-        self.debug_compare=False
-        self.debug_fracs={}
-
-manager=LayerManager()
-
-
-class SpikeModule(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.spike_mode=False
-
-    def set_Vthr(self,Vthr):
-        for m in self.modules():
-            if hasattr(m,'Vthr'):
-                m.Vthr=Vthr
-
-    def set_spike_mode(self):
-        for m in self.modules():
-            if hasattr(m,'scale_weights'):
-                m.scale_weights()
-                m.spike_mode = True
-        self.spike_mode=True
-
-    def set_reset_mode(self,mode):
-        for m in self.modules():
-            if hasattr(m,'reset_mode'):
-                m.reset_mode=mode
-
-    def fuse_conv_bn(self):
-        return
-
-
-class BaseSpikeLayer(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.spike_mode = False
-
-class SpikeConv2d(BaseSpikeLayer):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-                 padding=0, dilation=1, groups=1,
-                 bias=True, padding_mode='zeros', first_layer=False, reset_mode='zero', fuse_bn=None):
-        super().__init__()
-        kernel_size = _pair(kernel_size)
-        stride = _pair(stride)
-        padding = _pair(padding)
-        dilation = _pair(dilation)
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.stride = stride
-        self.padding = padding
-        self.dilation = dilation
-        self.groups = groups
-        self.padding_mode = padding_mode
-        self.weight= Parameter(torch.Tensor(
-                out_channels, in_channels // groups, *kernel_size))
-        self.Vthr=1
-        self.weight_scaled=Parameter(torch.Tensor(
-                out_channels, in_channels // groups, *kernel_size))
-        if bias:
-            self.bias = Parameter(torch.Tensor(out_channels))
-            self.bias_scaled = Parameter(torch.Tensor(out_channels))
-        else:
-            self.register_parameter('bias', None)
-            self.register_parameter('bias_scaled', None)
-        self.activations_pool=[]
-        self.inputs_pool=[]
-        self.out_scale_factor=Parameter(torch.Tensor(out_channels))
-        self.first_layer=first_layer
-        self.reset_mode=reset_mode
-
-    def forward_compare(self,x):
-        assert isinstance(x, DebugTensor)
-        spike_out=self.forward_spike(x.x_spike)
-        float_out=self.forward_float(x.x_float)
-        if manager.debug_compare:
-            float_out = F.relu(float_out)
-            _spike_out=spike_out.to_float()
-            diff = float_out - _spike_out
-            print('diff', diff.mean(0).mean(-1).mean(-1))
-            print('float', float_out.mean(0).mean(-1).mean(-1))
-            print('spike', _spike_out.mean(0).mean(-1).mean(-1))
-            fracs = (diff.mean(0) / (_spike_out.mean(0) + 1e-8)).mean(-1).mean(-1)
-            print('Frac', fracs)
-            manager.debug_fracs[self] = fracs
-            print('MaxError', fracs.max())
-        return DebugTensor(spike_out,float_out)
-
-    def forward_spike(self,x):
-        assert isinstance(x, SpikeTensor)
-        out = F.conv2d(x.data, self.weight_scaled, self.bias_scaled, self.stride, self.padding, self.dilation,
-                       self.groups)
-        chw = out.size()[1:]
-        out_s = out.view(x.timesteps, -1, *chw)
-        memb_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
-        spikes = []
-        for t in range(x.timesteps):
-            memb_potential += self.Vthr * out_s[t]
-            spike = (memb_potential > self.Vthr).float()
-            if self.reset_mode == 'zero':
-                memb_potential *= (1 - spike)
-            elif self.reset_mode == 'subtraction':
-                memb_potential -= spike * self.Vthr
-            else:
-                raise NotImplementedError
-            spikes.append(spike)
-
-        out = SpikeTensor(torch.cat(spikes, 0), x.timesteps, self.out_scale_factor)
-        return out
-
-    def forward_float(self,x):
-        out = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        out=F.relu(out)
-        self.activations_pool.append(out)
-        self.inputs_pool.append(x)
-        return out
+class SpikeConv2d(nn.Conv2d):
 
     def forward(self,x):
-        if manager.debug_compare:
-            return self.forward_compare(x)
-        if self.spike_mode:
-            return self.forward_spike(x)
+        Vthr=1
+        if isinstance(x,SpikeTensor):
+            out = F.conv2d(x.data, self.weight, self.bias, self.stride, self.padding, self.dilation,
+                           self.groups)
+            chw = out.size()[1:]
+            out_s = out.view(x.timesteps, -1, *chw)
+            memb_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
+            spikes = []
+            for t in range(x.timesteps):
+                memb_potential += Vthr* out_s[t]
+                spike = (memb_potential > Vthr).float()
+                if reset_mode == 'zero':
+                    memb_potential *= (1 - spike)
+                elif reset_mode == 'subtraction':
+                    memb_potential -= spike * Vthr
+                else:
+                    raise NotImplementedError
+                spikes.append(spike)
+
+            out = SpikeTensor(torch.cat(spikes, 0), x.timesteps,None)
+            return out
         else:
-            return self.forward_float(x)
+            out = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+            out = F.relu(out)
+            return out
 
-    def scale_weights(self):
-        """
-        $ W^l := W^l * \lambda^{l-1} \lambda^l $ and $ b^l := b^l / \lambda^l $
-        """
-        activations = torch.cat(self.activations_pool, 0).transpose(0, 1).contiguous().view(self.out_channels, -1)
-        inputs = torch.cat(self.inputs_pool, 0).transpose(0, 1).contiguous().view(self.in_channels, -1)
-        out_scale=torch.sort(activations,-1)[0][:,int(activations.size(1)*0.99)]
-        in_scale=torch.sort(inputs,-1)[0][:,int(inputs.size(1)*0.99)]
-        self.out_scale_factor.data=out_scale
-        if not self.first_layer:
-            self.weight_scaled.data= self.weight.data*in_scale.view(1, -1, 1, 1)/out_scale.view(-1,1,1,1)
-        else:
-            self.weight_scaled.data= self.weight.data/out_scale.view(-1,1,1,1)
-        if self.bias is not None:
-            self.bias_scaled.data=self.bias.data/out_scale
-        self.activations_pool.clear()
-        self.inputs_pool.clear()
-
-
-class SpikeLinear(BaseSpikeLayer):
-    __constants__ = ['bias', 'in_features', 'out_features']
-
-    def __init__(self,in_features, out_features, bias=True,reset_mode='zero',first_layer=False):
-        super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = Parameter(torch.Tensor(out_features, in_features))
-        self.weight_scaled = Parameter(torch.Tensor(out_features, in_features))
-        if bias:
-            self.bias = Parameter(torch.Tensor(out_features))
-            self.bias_scaled = Parameter(torch.Tensor(out_features))
-        else:
-            self.register_parameter('bias', None)
+class SpikeLinear(nn.Linear):
+    def forward(self,x):
         self.Vthr=1
-        self.reset_parameters()
-        self.reset_mode=reset_mode
-        self.activations_pool = []
-        self.inputs_pool = []
-        self.out_scale_factor = Parameter(torch.Tensor(out_features))
-        self.first_layer=first_layer
+        if isinstance(x,SpikeTensor):
+            out = F.linear(x.data, self.weight, self.bias)
+            chw = out.size()[1:]
+            out_s = out.view(x.timesteps, -1, *chw)
+            memb_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
+            spikes = []
+            for t in range(x.timesteps):
+                memb_potential += self.Vthr * out_s[t]
+                spike = (memb_potential > self.Vthr).float()
+                if reset_mode == 'zero':
+                    memb_potential *= (1 - spike)
+                elif reset_mode == 'subtraction':
+                    memb_potential -= spike * self.Vthr
+                else:
+                    raise NotImplementedError
+                spikes.append(spike)
 
-    def reset_parameters(self):
-        init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-        if self.bias is not None:
-            fan_in, _ = init._calculate_fan_in_and_fan_out(self.weight)
-            bound = 1 / math.sqrt(fan_in)
-            init.uniform_(self.bias, -bound, bound)
-
-    def forward_spike(self,x):
-        out = F.linear(x.data, self.weight_scaled, self.bias_scaled)
-        chw = out.size()[1:]
-        out_s = out.view(x.timesteps, -1, *chw)
-        memb_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
-        spikes = []
-        for t in range(x.timesteps):
-            memb_potential += self.Vthr * out_s[t]
-            spike = (memb_potential > self.Vthr).float()
-            if self.reset_mode == 'zero':
-                memb_potential *= (1 - spike)
-            elif self.reset_mode == 'subtraction':
-                memb_potential -= spike * self.Vthr
-            else:
-                raise NotImplementedError
-            spikes.append(spike)
-
-        out = SpikeTensor(torch.cat(spikes, 0), x.timesteps, self.out_scale_factor)
-        return out
-
-    def forward_float(self,x):
-        out = F.linear(x, self.weight, self.bias)
-        out=F.relu(out)
-        self.activations_pool.append(out)
-        self.inputs_pool.append(F.relu(x.data))
-        return out
-
-    def forward_compare(self,x):
-        assert isinstance(x, DebugTensor)
-
-        spike_out = self.forward_spike(x.x_spike)
-        float_out = self.forward_float(x.x_float)
-        if manager.debug_compare:
-            _spike_out=spike_out.to_float()
-            try:
-                diff = float_out - _spike_out
-                print('diff', diff.mean(0))
-                print('float', float_out.mean(0))
-                print('spike', _spike_out.mean(0))
-                print('Frac', diff.mean(0) / _spike_out.mean(0))
-            except:
-                pass
-        return DebugTensor(spike_out,float_out)
-
-    def forward(self, x):
-        if manager.debug_compare:
-            return self.forward_compare(x)
-        if self.spike_mode:
-            return self.forward_spike(x)
+            out = SpikeTensor(torch.cat(spikes, 0), x.timesteps, None)
+            return out
         else:
-            return self.forward_float(x)
+            out = F.linear(x, self.weight, self.bias)
+            out = F.relu(out)
+            return out
 
-    def scale_weights(self):
-        """
-        $ W^l := W^l * \lambda^{l-1} \lambda^l $ and $ b^l := b^l / \lambda^l $
-        """
-        activations = torch.cat(self.activations_pool, 0).transpose(0, 1).contiguous().view(self.out_features, -1)
-        inputs = torch.cat(self.inputs_pool, 0).transpose(0, 1).contiguous().view(self.in_features, -1)
-        out_scale = torch.sort(activations, -1)[0][:, int(activations.size(1) * 0.999)]+1e-8
-        in_scale = torch.sort(inputs, -1)[0][:, int(inputs.size(1) * 0.999)]+1e-8
-        self.out_scale_factor.data = out_scale
-        if not self.first_layer:
-            self.weight_scaled.data = self.weight * in_scale.view(1, -1) / out_scale.view(-1, 1)
-        else:
-            self.weight_scaled.data = self.weight / out_scale.view(-1, 1)
-            # self.weight.data = self.weight / out_scale.mean()
-        if self.bias is not None:
-            self.bias_scaled.data = self.bias / out_scale
-            # self.bias.data = self.bias / out_scale.mean()
-        self.activations_pool.clear()
-        self.inputs_pool.clear()
-
-    def extra_repr(self):
-        return 'in_features={}, out_features={}, bias={}'.format(
-            self.in_features, self.out_features, self.bias is not None
-        )
-
-def spike_max_pooling(x,kernel_size, stride=None, padding=0):
-    if manager.debug_compare:
-        assert isinstance(x,DebugTensor)
-        x_spike,x_float=x.x_spike,x.x_float
-        float_out = F.max_pool2d(x_float, kernel_size, stride, padding)
-    else:
-        x_spike=x
-    firing_ratio = x_spike.firing_ratio()
-    _, ind = F.max_pool2d(firing_ratio, kernel_size, stride, padding, return_indices=True)
-    outh, outw = ind.size()[-2:]
-    _x = x_spike.timestep_dim_tensor()
-    t, b, c, h, w = _x.size()
-    _x = _x.view(t, b, c, -1)
-    ind = ind.view(1, b, c, -1)
-    inds = torch.cat([ind for _ in range(t)], 0)
-    out = _x.gather(-1, inds)
-    out = out.view(b * t, c, outh, outw)
-    spike_out=SpikeTensor(out,x_spike.timesteps,scale_factor=x_spike.scale_factor)
-    if manager.debug_compare:
-        return DebugTensor(spike_out,float_out)
-    else:
-        return spike_out
-
-class SpikeAvgPool2d(BaseSpikeLayer):
+class SpikeAvgPool2d(nn.Module):
     def __init__(self,kernel_size, stride=None, padding=0):
         self.kernel_size=kernel_size
         self.stride=stride
@@ -292,21 +72,14 @@ class SpikeAvgPool2d(BaseSpikeLayer):
         super().__init__()
 
     def forward(self,x):
-        if not self.spike_mode:
-            return F.avg_pool2d(x,self.kernel_size,self.stride,self.padding)
         return spike_avg_pooling(x,self.kernel_size,self.stride,self.padding)
 
 
 def spike_avg_pooling(x,kernel_size, stride=None, padding=0):
-    if manager.debug_compare:
-        assert isinstance(x,DebugTensor)
-        x_spike,x_float=x.x_spike,x.x_float
-        float_out = F.avg_pool2d(x_float, kernel_size, stride, padding)
-    else:
-        x_spike=x
-    out=F.avg_pool2d(x_spike.data, kernel_size, stride, padding)
-    spike_out=SpikeTensor(out,x_spike.timesteps,scale_factor=x_spike.scale_factor)
-    if manager.debug_compare:
-        return DebugTensor(spike_out,float_out)
-    else:
+    if isinstance(x, SpikeTensor):
+        out=F.avg_pool2d(x.data, kernel_size, stride, padding)
+        spike_out=SpikeTensor(out,x.timesteps,None)
         return spike_out
+    else:
+        out=F.avg_pool2d(x, kernel_size, stride, padding)
+        return out
