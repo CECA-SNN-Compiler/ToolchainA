@@ -123,7 +123,8 @@ class SpikeConv2d(BaseSpikeLayer):
 
     def forward_float(self,x):
         out = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        self.activations_pool.append(F.relu(out))
+        out=F.relu(out)
+        self.activations_pool.append(out)
         self.inputs_pool.append(x)
         return out
 
@@ -205,6 +206,7 @@ class SpikeLinear(BaseSpikeLayer):
 
     def forward_float(self,x):
         out = F.linear(x, self.weight, self.bias)
+        out=F.relu(out)
         self.activations_pool.append(out)
         self.inputs_pool.append(F.relu(x.data))
         return out
@@ -276,6 +278,33 @@ def spike_max_pooling(x,kernel_size, stride=None, padding=0):
     inds = torch.cat([ind for _ in range(t)], 0)
     out = _x.gather(-1, inds)
     out = out.view(b * t, c, outh, outw)
+    spike_out=SpikeTensor(out,x_spike.timesteps,scale_factor=x_spike.scale_factor)
+    if manager.debug_compare:
+        return DebugTensor(spike_out,float_out)
+    else:
+        return spike_out
+
+class SpikeAvgPool2d(BaseSpikeLayer):
+    def __init__(self,kernel_size, stride=None, padding=0):
+        self.kernel_size=kernel_size
+        self.stride=stride
+        self.padding=padding
+        super().__init__()
+
+    def forward(self,x):
+        if not self.spike_mode:
+            return F.avg_pool2d(x,self.kernel_size,self.stride,self.padding)
+        return spike_avg_pooling(x,self.kernel_size,self.stride,self.padding)
+
+
+def spike_avg_pooling(x,kernel_size, stride=None, padding=0):
+    if manager.debug_compare:
+        assert isinstance(x,DebugTensor)
+        x_spike,x_float=x.x_spike,x.x_float
+        float_out = F.avg_pool2d(x_float, kernel_size, stride, padding)
+    else:
+        x_spike=x
+    out=F.avg_pool2d(x_spike.data, kernel_size, stride, padding)
     spike_out=SpikeTensor(out,x_spike.timesteps,scale_factor=x_spike.scale_factor)
     if manager.debug_compare:
         return DebugTensor(spike_out,float_out)
