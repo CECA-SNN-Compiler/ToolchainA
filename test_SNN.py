@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import time
 import torch.nn as nn
-from spike_tensor import SpikeTensor
+from spike_layers import *
 import GPUtil
 import os
 
@@ -53,6 +53,11 @@ def validate(test_loader, model, device, criterion, epoch, train_writer=None,spi
 
     # switch to evaluate mode
     model.eval()
+    if spike_mode==False:
+        prediction_layer=None
+        for layer in model.modules():
+            if isinstance(layer,SpikeLinear):
+                prediction_layer=layer
 
     end = time.time()
     with torch.no_grad():
@@ -70,8 +75,8 @@ def validate(test_loader, model, device, criterion, epoch, train_writer=None,spi
             output = model(data)
             if spike_mode:
                 output=output.to_float()
-            elif hasattr(model.fc1,'out_scales'):
-                output*=model.fc1.out_scales.view(1,-1)
+            elif hasattr(prediction_layer,'out_scales'):
+                output=output*prediction_layer.out_scales.view(1,-1)
 
             target = target.to(device)
             loss = criterion(output, target)
@@ -102,7 +107,7 @@ if __name__=='__main__':
     parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
     parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--test_batch_size', default=128, type=int)
-    parser.add_argument('--timesteps', default=100, type=int)
+    parser.add_argument('--timesteps', default=50, type=int)
     parser.add_argument('--input_poisson', action='store_true')
     parser.add_argument('--Vthr', default=1,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])

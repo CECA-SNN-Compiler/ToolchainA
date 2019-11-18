@@ -7,7 +7,6 @@ import torch.nn as nn
 from spike_tensor import SpikeTensor,DebugTensor
 import GPUtil
 import os
-from spike_layers import manager
 from build_network import get_net_by_name
 
 min_mem_gpu = np.argmin([_.memoryUsed for _ in GPUtil.getGPUs()])
@@ -69,9 +68,11 @@ def validate(test_loader, model, device, criterion, epoch, train_writer=None,spi
                 else:
                     replica_data=torch.cat([raw_data for _ in range(args.timesteps)],0)
                     data = SpikeTensor(replica_data, args.timesteps,scale_factor=1)
-                if args.debug_compare:
-                    data=DebugTensor(data,raw_data)
             output = model(data)
+            if spike_mode:
+                output=output.to_float()
+            elif hasattr(model.fc1,'out_scales'):
+                output*=model.fc1.out_scales.view(1,-1)
 
             target = target.to(device)
             loss = criterion(output, target)
@@ -100,8 +101,8 @@ if __name__=='__main__':
     parser.add_argument('net_name',type=str)
     parser.add_argument('--base_lr', default=0.05, type=float, help='learning rate')
     parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
-    parser.add_argument('--batch_size', default=100, type=int)
-    parser.add_argument('--test_batch_size', default=1, type=int)
+    parser.add_argument('--batch_size', default=128, type=int)
+    parser.add_argument('--test_batch_size', default=128, type=int)
     parser.add_argument('--input_poisson', action='store_true')
     parser.add_argument('--Vthr', default=1,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
@@ -110,32 +111,28 @@ if __name__=='__main__':
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
-
+    device=torch.device('cuda')
+    criterion=nn.CrossEntropyLoss()
     net=get_net_by_name(args.net_name)
-    net.cuda()
-    net.set_reset_mode(args.reset_mode)
-    net.set_Vthr(args.Vthr)
-
+    net.to(device)
 
     if args.resume:
         net.load_state_dict(torch.load(args.resume),False)
-    # fuse the conv and bn
-    net.fuse_conv_bn()
 
     # validate to get the stat for scale factor
-    raw_acc,_=validate(val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0,spike_mode=False)
-    net.set_spike_mode()
-    if args.debug_compare:
-        manager.debug_compare=True
+    raw_acc,_=validate(val_loader,net,device,criterion,0,spike_mode=False)
+    from ann2snn import trans_ann2snn
+    net=trans_ann2snn(net,train_val_loader,device=device)
     accs=[]
     Xs=np.arange(1,9,1)
     for timesteps in 2**Xs:
         args.timesteps=timesteps
         iters=1 if args.debug_compare else -1
-        acc,loss=validate(val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0,spike_mode=True,iters=iters)
-        accs.append(acc)
-        if args.debug_compare:
-            print([__.abs().max().item() for _,__ in manager.debug_fracs.items()])
+        try:
+            acc,loss=validate(val_loader,net,device,criterion,0,spike_mode=True,iters=iters)
+            accs.append(acc)
+        except:
+            pass
     import matplotlib.pyplot as plt
     import seaborn as sns
     sns.set_style('whitegrid')

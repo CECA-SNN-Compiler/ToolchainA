@@ -19,11 +19,11 @@ import re
 np.set_printoptions(3)
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR Training')
-parser.add_argument('--base_lr', default=0.001, type=float, help='learning rate')
+parser.add_argument('--base_lr', default=0.01, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
 parser.add_argument('--batch_size', default=128,type=int)
 parser.add_argument('--test_batch_size', default=512,type=int)
-parser.add_argument('--config_name',default='testnet2')
+parser.add_argument('--config_name',default='testnet5')
 parser.add_argument('--actions',default='',type=str)
 parser.add_argument('--epochs',default=90,type=int)
 parser.add_argument('--parallel',default=False)
@@ -81,7 +81,8 @@ if args.resume:
 criterion = nn.CrossEntropyLoss()
 is_warm_up=True if 'resnet110' in config_name else False
 optimizer=torch.optim.SGD(net.parameters(),args.base_lr,0.9,weight_decay=args.weight_decay)
-lr_scheduler=torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,args.epochs,1e-5)
+# lr_scheduler=torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,args.epochs,1e-5)
+lr_scheduler=torch.optim.lr_scheduler.MultiStepLR(optimizer,[int(args.epochs*0.5),int(args.epochs*0.75)],0.1)
 
 
 def train(epoch):
