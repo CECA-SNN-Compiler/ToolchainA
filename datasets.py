@@ -106,12 +106,12 @@ def get_dataset(args):
 
     elif "CIFAR" in args.dataset:
         # Data loading code
-        if '10' in args.dataset:
-            normalize = transforms.Normalize(mean=[0.4914, 0.4822, 0.4465],
-                                             std=[0.2470, 0.2435, 0.2616])
-        else:
+        if '100' in args.dataset:
             normalize = transforms.Normalize(mean=[0.5071, 0.4865, 0.4409],
                                              std=[0.2673, 0.2564, 0.2762])
+        else:
+            normalize = transforms.Normalize(mean=[0.4914, 0.4822, 0.4465],
+                                             std=[0.2470, 0.2435, 0.2616])
 
         transform_train = transforms.Compose([
             transforms.RandomCrop(32,padding=4),
@@ -137,8 +137,8 @@ def get_dataset(args):
         rand_inds = np.arange(len(train_val_set))
         np.random.seed(3)
         np.random.shuffle(rand_inds)
-        val_set=set(root, train=True, download=True, transform=transform_test)
-        train_set=set(root, train=True, download=True, transform=transform_train)
+        val_set=copy.deepcopy(train_val_set)
+        train_set=copy.deepcopy(train_val_set)
         n_val=5000
         train_set.data=train_set.data[n_val:]
         train_set.targets=train_set.targets[n_val:]
@@ -155,50 +155,6 @@ def get_dataset(args):
         test_loader = torch.utils.data.DataLoader(
             set(root, train=False, transform=transform_test),
             batch_size=args.test_batch_size, shuffle=False, **kwargs)
-    elif args.dataset=='ImageNet':
-        root='/media/nvme0/imagenet'
-        version=1
-        if not os.path.exists(root):
-            root = './data/imagenet'
-        cache_file='/tmp/S2DI_{}.pkl'.format('h' if args.half else 'f')
-        if os.path.exists(cache_file):
-            try:
-                _version,train_val_set,test_set=pickle.load(open(cache_file,'rb'))
-                if _version != version:
-                    os.remove(cache_file)
-            except:
-                os.remove(cache_file)
-
-        if not os.path.exists(cache_file):
-            mean = [0.485, 0.456, 0.406]
-            std = [0.229, 0.224, 0.225]
-            transform_train = transforms.Compose([
-                transforms.Scale(256),
-                transforms.RandomCrop(224),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(mean, std),
-            ]+([half] if args.half else []))
-
-            transform_test = transforms.Compose([
-                transforms.Scale(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(mean, std),
-
-            ]+([half] if args.half else []))
-            train_val_set = ImageFolder(root + '/train/', transform_train)
-            test_set = ImageFolder(root + '/val/', transform_test)
-            pickle.dump([version,train_val_set,test_set],open(cache_file, 'wb'))
-        train_set=copy.deepcopy(train_val_set)
-        del train_set.imgs[-int(len(train_set)/10):]
-        val_set=copy.deepcopy(train_val_set)
-        del val_set.imgs[:-int(len(train_set)/10)]
-        train_val_loader = DataLoader(train_val_set, batch_size=args.batch_size, shuffle=True, num_workers=torch.get_num_threads())
-        train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=torch.get_num_threads())
-        val_loader=DataLoader(val_set, batch_size=args.batch_size, shuffle=True, num_workers=torch.get_num_threads())
-        # val_loader = DataLoader(valset, batch_size=args.batch_size, shuffle=True, num_workers=8)
-        test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=False, num_workers=torch.get_num_threads())
     else:
         raise NotImplementedError
     return test_loader,val_loader,train_loader,train_val_loader

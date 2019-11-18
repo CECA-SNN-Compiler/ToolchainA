@@ -13,6 +13,5 @@ class TestNet2(nn.Module):
     def forward(self, x):
         x_=x.view(x.size(0),-1)
         out = self.fc1(x_)
-        out=F.relu(out)
         out=self.fc2(out)
         return out

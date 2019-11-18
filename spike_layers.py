@@ -8,6 +8,8 @@ import math
 
 reset_mode='subtraction'
 
+
+
 class SpikeConv2d(nn.Conv2d):
 
     def forward(self,x):
@@ -30,7 +32,7 @@ class SpikeConv2d(nn.Conv2d):
                     raise NotImplementedError
                 spikes.append(spike)
 
-            out = SpikeTensor(torch.cat(spikes, 0), x.timesteps,None)
+            out = SpikeTensor(torch.cat(spikes, 0), x.timesteps,self.out_scales)
             return out
         else:
             out = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
@@ -57,7 +59,7 @@ class SpikeLinear(nn.Linear):
                     raise NotImplementedError
                 spikes.append(spike)
 
-            out = SpikeTensor(torch.cat(spikes, 0), x.timesteps, None)
+            out = SpikeTensor(torch.cat(spikes, 0), x.timesteps, self.out_scales)
             return out
         else:
             out = F.linear(x, self.weight, self.bias)
@@ -78,7 +80,7 @@ class SpikeAvgPool2d(nn.Module):
 def spike_avg_pooling(x,kernel_size, stride=None, padding=0):
     if isinstance(x, SpikeTensor):
         out=F.avg_pool2d(x.data, kernel_size, stride, padding)
-        spike_out=SpikeTensor(out,x.timesteps,None)
+        spike_out=SpikeTensor(out,x.timesteps, x.scale_factor)
         return spike_out
     else:
         out=F.avg_pool2d(x, kernel_size, stride, padding)

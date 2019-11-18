@@ -7,12 +7,6 @@ import torch.nn as nn
 from spike_tensor import SpikeTensor
 import GPUtil
 import os
-from spike_layers import manager
-from torchvision.datasets import ImageFolder
-from torch.utils.data import DataLoader
-import copy
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
 
 min_mem_gpu = np.argmin([_.memoryUsed for _ in GPUtil.getGPUs()])
 print("selecting GPU {}".format(min_mem_gpu))
@@ -74,6 +68,10 @@ def validate(test_loader, model, device, criterion, epoch, train_writer=None,spi
                     data = SpikeTensor(replica_data, args.timesteps,scale_factor=1)
 
             output = model(data)
+            if spike_mode:
+                output=output.to_float()
+            elif hasattr(model.fc1,'out_scales'):
+                output*=model.fc1.out_scales.view(1,-1)
 
             target = target.to(device)
             loss = criterion(output, target)
@@ -102,37 +100,32 @@ if __name__=='__main__':
     parser.add_argument('net_name',type=str)
     parser.add_argument('--base_lr', default=0.05, type=float, help='learning rate')
     parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
-    parser.add_argument('--batch_size', default=1, type=int)
-    parser.add_argument('--test_batch_size', default=100, type=int)
-    parser.add_argument('--timesteps', default=1, type=int)
+    parser.add_argument('--batch_size', default=128, type=int)
+    parser.add_argument('--test_batch_size', default=128, type=int)
+    parser.add_argument('--timesteps', default=100, type=int)
     parser.add_argument('--input_poisson', action='store_true')
     parser.add_argument('--Vthr', default=1,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
     parser.add_argument('--half', default=False, type=bool)
-    parser.add_argument('--debug_compare', default=0, type=bool)
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
-
-    if args.net_name=='testnet':
-        from models.testnet import TestNet
-        net = TestNet()
-    elif args.net_name=='testnet2':
-        from models.testnet2 import TestNet2
-        net = TestNet2()
-    else:
-        raise NotImplementedError
+    from build_network import get_net_by_name
+    net=get_net_by_name(args.net_name)
     net.cuda()
-    net.set_reset_mode(args.reset_mode)
-
-    if args.debug_compare:
-        manager.debug_compare=True
     if args.resume:
         net.load_state_dict(torch.load(args.resume),False)
     # fuse the conv and bn
-    net.fuse_conv_bn()
+    # net.fuse_conv_bn()
+    from ann2snn import trans_ann2snn
+    device=torch.device('cuda')
+    criterion=nn.CrossEntropyLoss()
+
+    validate(val_loader, net, device, criterion, 0, spike_mode=False)
+
+    snn=trans_ann2snn(net,test_loader,device)
 
     # validate to get the stat for scale factor
-    validate(val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0,spike_mode=False)
-    net.set_spike_mode()
-    validate(val_loader,net,torch.device('cuda'),nn.CrossEntropyLoss(),0,spike_mode=True)
+    validate(val_loader,net,device,criterion,0,spike_mode=False)
+    # net.set_spike_mode()
+    validate(val_loader,snn,device,criterion,0,spike_mode=True)

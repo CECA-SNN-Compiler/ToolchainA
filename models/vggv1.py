@@ -54,5 +54,6 @@ class VGG16V1(nn.Module):
 
 if __name__=='__main__':
     net=VGG16V1()
-    x=torch.ones([1,3,32,32])
-    net(x)
+    x=torch.ones([4,3,32,32])
+    xs=SpikeTensor(x,2,None)
+    net(xs)
