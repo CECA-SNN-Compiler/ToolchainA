@@ -28,7 +28,7 @@ def trans_layer(layer,prev_layer,device):
         in_scale=1
     else:
         _, inc = prev_layer.output_pool[0].size()[:2]
-        inputs = torch.cat(prev_layer.output_pool, 0).transpose(0, 1).contiguous().view(inc, -1)
+        inputs = torch.cat(prev_layer.output_pool, 0).transpose(0, 1).contiguous().view(inc, -1)[:,:100000]
         in_scale = torch.sort(inputs, -1)[0][:, int(inputs.size(1) * 0.99)]
         if in_scale.size(0)!=layer.weight.size(1):
             if isinstance(layer,SpikeLinear) and isinstance(prev_layer,SpikeConv2d):
@@ -37,7 +37,7 @@ def trans_layer(layer,prev_layer,device):
                 2==2
         in_scale = in_scale.view(1, -1, *[1] * spatial_dim).to(device)
     _, outc = layer.output_pool[0].size()[:2]
-    outputs=torch.cat(layer.output_pool,0).transpose(0, 1).contiguous().view(outc, -1)
+    outputs=torch.cat(layer.output_pool,0).transpose(0, 1).contiguous().view(outc, -1)[:,:100000]
     out_scale = torch.sort(outputs, -1)[0][:, int(outputs.size(1) * 0.99)]
     out_scale = out_scale.view(-1, 1, *[1] * spatial_dim).to(device)
 
@@ -49,6 +49,8 @@ def trans_layer(layer,prev_layer,device):
         layer.bias.data=layer.bias.data/out_scale.view(-1)
     # set the out_scales of layer
     layer.out_scales=out_scale.view(-1)
+    # print scale
+    print("Mean:",torch.mean(layer.weight.data).item(),"STD:",torch.std(layer.weight.data).item())
 
 def trans_ann2snn(ann,dataloader,device):
     print("Start transfer ANN to SNN, this will take a while")

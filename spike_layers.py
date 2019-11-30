@@ -12,6 +12,14 @@ reset_mode='subtraction'
 
 class SpikeConv2d(nn.Conv2d):
 
+    def __init__(self,in_channels, out_channels, kernel_size, stride=1,
+                 padding=0, dilation=1, groups=1,
+                 bias=True, padding_mode='zeros',):
+        # raise NotImplementedError
+        # TODO : add batchnorm here
+        super().__init__(in_channels, out_channels, kernel_size, stride,
+                 padding, dilation, groups,bias, padding_mode)
+
     def forward(self,x):
         Vthr=1
         if isinstance(x,SpikeTensor):
@@ -31,7 +39,6 @@ class SpikeConv2d(nn.Conv2d):
                 else:
                     raise NotImplementedError
                 spikes.append(spike)
-
             out = SpikeTensor(torch.cat(spikes, 0), x.timesteps,self.out_scales)
             return out
         else:
