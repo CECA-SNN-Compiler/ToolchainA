@@ -35,20 +35,25 @@ class TestNet5(nn.Module):
         self.conv4 = SpikeConv2d(int(32 * scale), int(32 * scale), 3,padding=1)
         self.conv5 = SpikeConv2d(int(32 * scale), int(32 * scale), 3,padding=1)
         self.conv6 = SpikeConv2d(int(32 * scale), int(32 * scale), 3,padding=1)
+        self.pool=SpikeAvgPool2d(2)
         self.fc1 = SpikeLinear(nuintis_fc, outputs)
+
+    def prediction_layer(self,x):
+        out = x.view(x.size(0), -1)
+        out = self.fc1(out)
+        return out
 
     def forward(self,x):
         out = self.conv1(x)
-        out = spike_avg_pooling(out, 2)
+        out = self.pool(out)
         out = self.conv2(out)
         out = self.conv3(out)
-        out = spike_avg_pooling(out, 2)
+        out = self.pool(out)
         out = self.conv4(out)
         out = self.conv5(out)
-        out = spike_avg_pooling(out, 2)
+        out = self.pool(out)
         out = self.conv6(out)
-        out = out.view(out.size(0), -1)
-        out = self.fc1(out)
+        out=self.prediction_layer(out)
         return out
 
 class TestNet4(nn.Module):

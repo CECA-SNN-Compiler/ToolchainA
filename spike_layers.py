@@ -8,7 +8,15 @@ import math
 
 reset_mode='subtraction'
 
-
+def warp_one_in_one_out_func(func):
+    def new_func(input,*args,**kwargs):
+        if isinstance(input,SpikeTensor):
+            out=SpikeTensor(func(input.data,*args,**kwargs),input.timesteps,input.scale_factor)
+        else:
+            out=func(input,*args,**kwargs)
+        return out
+    return new_func
+F.dropout=warp_one_in_one_out_func(F.dropout)
 
 class SpikeConv2d(nn.Conv2d):
 
@@ -19,6 +27,7 @@ class SpikeConv2d(nn.Conv2d):
         # TODO : add batchnorm here
         super().__init__(in_channels, out_channels, kernel_size, stride,
                  padding, dilation, groups,bias, padding_mode)
+        self.mem_potential=None
 
     def forward(self,x):
         Vthr=1
@@ -27,15 +36,15 @@ class SpikeConv2d(nn.Conv2d):
                            self.groups)
             chw = out.size()[1:]
             out_s = out.view(x.timesteps, -1, *chw)
-            memb_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
+            self.mem_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
             spikes = []
             for t in range(x.timesteps):
-                memb_potential += Vthr* out_s[t]
-                spike = (memb_potential > Vthr).float()
+                self.mem_potential += Vthr* out_s[t]
+                spike = (self.mem_potential > Vthr).float()
                 if reset_mode == 'zero':
-                    memb_potential *= (1 - spike)
+                    self.mem_potential *= (1 - spike)
                 elif reset_mode == 'subtraction':
-                    memb_potential -= spike * Vthr
+                    self.mem_potential -= spike * Vthr
                 else:
                     raise NotImplementedError
                 spikes.append(spike)
@@ -47,21 +56,24 @@ class SpikeConv2d(nn.Conv2d):
             return out
 
 class SpikeLinear(nn.Linear):
+    def __init__(self,in_features, out_features, bias=True,last_layer=False):
+        super().__init__(in_features, out_features, bias)
+        self.last_layer=last_layer
     def forward(self,x):
         self.Vthr=1
         if isinstance(x,SpikeTensor):
             out = F.linear(x.data, self.weight, self.bias)
             chw = out.size()[1:]
             out_s = out.view(x.timesteps, -1, *chw)
-            memb_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
+            self.mem_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
             spikes = []
             for t in range(x.timesteps):
-                memb_potential += self.Vthr * out_s[t]
-                spike = (memb_potential > self.Vthr).float()
+                self.mem_potential += self.Vthr * out_s[t]
+                spike = (self.mem_potential > self.Vthr).float()
                 if reset_mode == 'zero':
-                    memb_potential *= (1 - spike)
+                    self.mem_potential *= (1 - spike)
                 elif reset_mode == 'subtraction':
-                    memb_potential -= spike * self.Vthr
+                    self.mem_potential -= spike * self.Vthr
                 else:
                     raise NotImplementedError
                 spikes.append(spike)
@@ -70,7 +82,8 @@ class SpikeLinear(nn.Linear):
             return out
         else:
             out = F.linear(x, self.weight, self.bias)
-            out = F.relu(out)
+            if not self.last_layer:
+                out = F.relu(out)
             return out
 
 class SpikeAvgPool2d(nn.Module):

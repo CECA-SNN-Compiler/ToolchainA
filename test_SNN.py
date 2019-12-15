@@ -7,6 +7,8 @@ import torch.nn as nn
 from spike_layers import *
 import GPUtil
 import os
+import copy
+import matplotlib.pyplot as plt
 
 min_mem_gpu = np.argmin([_.memoryUsed for _ in GPUtil.getGPUs()])
 print("selecting GPU {}".format(min_mem_gpu))
@@ -99,6 +101,96 @@ def validate(test_loader, model, device, criterion, epoch, train_writer=None,spi
 
     return top1.avg, losses.avg
 
+def error_validate(test_loader, model, device, criterion, epoch, train_writer=None,spike_mode=False):
+    """Perform validation on the validation set"""
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+
+    # switch to evaluate mode
+    model.eval()
+    if spike_mode==False:
+        prediction_layer=None
+        for layer in model.modules():
+            if isinstance(layer,SpikeLinear):
+                prediction_layer=layer
+
+    end = time.time()
+    with torch.no_grad():
+        for data_test in test_loader:
+            data, target = data_test
+
+            raw_data = data.to(device)
+            if args.input_poisson:
+                assert NotImplementedError
+            else:
+                replica_data=torch.cat([raw_data for _ in range(args.timesteps)],0)
+                data = SpikeTensor(replica_data, args.timesteps,scale_factor=1)
+
+
+            # theory error
+            module_names={module:name for name,module in model.named_modules()}
+            layer_outputs={}
+            def layer_hook(module,input,output):
+                layer_outputs[module_names[module]]=output
+
+            for name,module in model.named_modules():
+                if isinstance(module, SpikeConv2d):
+                    module.register_forward_hook(layer_hook)
+            output = model(data)
+
+            spike_outputs=copy.deepcopy(layer_outputs)
+            layer_outputs.clear()
+
+            raw_output = model(raw_data)
+            F1s=[]
+            F2s=[]
+            for name in layer_outputs:
+                raw=layer_outputs[name]
+                spike=spike_outputs[name]
+                error=raw-spike.firing_ratio()
+                F1=torch.mean(torch.abs(raw-spike.firing_ratio()))
+                # F1=torch.norm(error,1)/np.prod(error.size())
+                F2=torch.mean((raw-spike.firing_ratio())**2)
+                # F2=torch.norm(error,2)/np.prod(error.size())
+                print(f"F1 {F1} F2 {F2}")
+                F1s.append(F1)
+                F2s.append(F2)
+            for name,module in model.named_modules():
+                if isinstance(module, SpikeConv2d) or isinstance(module,SpikeAvgPool2d):
+                    module._forward_hooks.clear()
+            return F1s,F2s
+            # exit()
+
+
+            if spike_mode:
+                output=output.to_float()
+            elif hasattr(prediction_layer,'out_scales'):
+                output=output*prediction_layer.out_scales.view(1,-1)
+
+
+            target = target.to(device)
+            loss = criterion(output, target)
+
+            prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
+            losses.update(loss.item(), data.size(0))
+            top1.update(prec1.item(), data.size(0))
+            top5.update(prec5.item(), data.size(0))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+    print(' * Prec@1 {top1.avg:.3f}, Prec@5 {top5.avg:.3f}, Time {batch_time.sum:.5f}, Loss: {losses.avg:.3f}'.format(
+        top1=top1, top5=top5, batch_time=batch_time, losses=losses))
+    # log to TensorBoard
+    if train_writer is not None:
+        train_writer.add_scalar('val_loss', losses.avg, epoch)
+        train_writer.add_scalar('val_acc', top1.avg, epoch)
+
+    return top1.avg, losses.avg
+
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
@@ -107,11 +199,12 @@ if __name__=='__main__':
     parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
     parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--test_batch_size', default=128, type=int)
-    parser.add_argument('--timesteps', default=50, type=int)
+    parser.add_argument('--timesteps', default=64, type=int)
     parser.add_argument('--input_poisson', action='store_true')
     parser.add_argument('--Vthr', default=1,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
     parser.add_argument('--half', default=False, type=bool)
+    parser.add_argument('--error_analysis', action='store_true')
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
@@ -126,11 +219,28 @@ if __name__=='__main__':
     device=torch.device('cuda')
     criterion=nn.CrossEntropyLoss()
 
-    validate(val_loader, net, device, criterion, 0, spike_mode=False)
+    validate(test_loader, net, device, criterion, 0, spike_mode=False)
 
-    snn=trans_ann2snn(net,test_loader,device)
+    snn=trans_ann2snn(net,val_loader,device)
 
     # validate to get the stat for scale factor
-    validate(val_loader,net,device,criterion,0,spike_mode=False)
+    validate(test_loader,net,device,criterion,0,spike_mode=False)
     # net.set_spike_mode()
-    validate(val_loader,snn,device,criterion,0,spike_mode=True)
+
+    if args.error_analysis:
+        for timesteps in [64,128,256]:
+            args.timesteps=timesteps
+            F1s,F2s=error_validate(test_loader,snn,device,criterion,0,spike_mode=True)
+            # plt.plot(F1s)
+            plt.plot(F2s,label=f'timesteps {args.timesteps}')
+        # plt.xlabel("layers")
+        # plt.ylabel("errors (L1)")
+        # plt.title(f"L1 error of different layers on timesteps {args.timesteps}")
+        # plt.show()
+        plt.xlabel("layers")
+        plt.ylabel("errors (MSE)")
+        plt.title(f"MSE error of different layers")
+        plt.legend()
+        plt.show()
+    else:
+        validate(test_loader,snn,device,criterion,0,spike_mode=True)

@@ -52,6 +52,8 @@ class VGG16V1(nn.Module):
         return out
 
 
+
+
 if __name__=='__main__':
     net=VGG16V1()
     x=torch.ones([4,3,32,32])
