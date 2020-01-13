@@ -195,7 +195,6 @@ def error_validate(test_loader, model, device, criterion, epoch, train_writer=No
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
     parser.add_argument('net_name',type=str)
-    parser.add_argument('--base_lr', default=0.05, type=float, help='learning rate')
     parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
     parser.add_argument('--batch_size', default=128, type=int)
     parser.add_argument('--test_batch_size', default=128, type=int)
@@ -205,6 +204,7 @@ if __name__=='__main__':
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
     parser.add_argument('--half', default=False, type=bool)
     parser.add_argument('--error_analysis', action='store_true')
+    parser.add_argument('--uni_in_scale', action='store_true')
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
@@ -219,28 +219,46 @@ if __name__=='__main__':
     device=torch.device('cuda')
     criterion=nn.CrossEntropyLoss()
 
-    validate(test_loader, net, device, criterion, 0, spike_mode=False)
+    raw_acc, _ =validate(test_loader, net, device, criterion, 0, spike_mode=False)
 
-    snn=trans_ann2snn(net,val_loader,device)
+    snn=trans_ann2snn(net,val_loader,device,args.uni_in_scale)
 
     # validate to get the stat for scale factor
     validate(test_loader,net,device,criterion,0,spike_mode=False)
     # net.set_spike_mode()
 
     if args.error_analysis:
-        for timesteps in [64,128,256]:
-            args.timesteps=timesteps
-            F1s,F2s=error_validate(test_loader,snn,device,criterion,0,spike_mode=True)
-            # plt.plot(F1s)
-            plt.plot(F2s,label=f'timesteps {args.timesteps}')
+        # for timesteps in [8,16,32,64,128,256]:
+        #     args.timesteps=timesteps
+        #     F1s,F2s=error_validate(test_loader,snn,device,criterion,0,spike_mode=True)
+        #     # plt.plot(F1s)
+        #     plt.plot(F2s,label=f'timesteps {args.timesteps}')
+        # # plt.xlabel("layers")
+        # # plt.ylabel("errors (L1)")
+        # # plt.title(f"L1 error of different layers on timesteps {args.timesteps}")
+        # # plt.show()
         # plt.xlabel("layers")
-        # plt.ylabel("errors (L1)")
-        # plt.title(f"L1 error of different layers on timesteps {args.timesteps}")
+        # plt.ylabel("errors (MSE)")
+        # plt.title(f"MSE error of different layers")
+        # plt.legend()
         # plt.show()
-        plt.xlabel("layers")
-        plt.ylabel("errors (MSE)")
-        plt.title(f"MSE error of different layers")
-        plt.legend()
+        Xs = np.arange(1, 9, 1)
+        accs = []
+        for timesteps in 2 ** Xs:
+            args.timesteps = timesteps
+            try:
+                acc, loss = validate(val_loader, net, device, criterion, 0, spike_mode=True)
+                accs.append(acc)
+            except:
+                pass
+        plt.figure(figsize=(4, 3))
+        plt.plot(Xs, accs, label='SNN')
+        plt.hlines(raw_acc, Xs.min(), Xs.max(), linestyles='--', label='ANN')
+        plt.xlabel('timesteps')
+        plt.ylabel('accuracy')
+        plt.xticks(Xs, 2 ** Xs)
+        plt.legend(loc='lower right')
+        # plt.title(args.net_name)
         plt.show()
     else:
         validate(test_loader,snn,device,criterion,0,spike_mode=True)

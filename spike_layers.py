@@ -23,7 +23,6 @@ class SpikeConv2d(nn.Conv2d):
     def __init__(self,in_channels, out_channels, kernel_size, stride=1,
                  padding=0, dilation=1, groups=1,
                  bias=True, padding_mode='zeros',):
-        # raise NotImplementedError
         # TODO : add batchnorm here
         super().__init__(in_channels, out_channels, kernel_size, stride,
                  padding, dilation, groups,bias, padding_mode)

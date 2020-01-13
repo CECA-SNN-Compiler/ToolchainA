@@ -21,7 +21,7 @@ def unwarp_spike_layer(layer):
     layer.forward=layer.old_forward
     return layer
 
-def trans_layer(layer,prev_layer,device):
+def trans_layer(layer,prev_layer,device,uni_in_scale=False):
     assert len(layer.output_pool)!=0
     spatial_dim = layer.weight.dim() - 2
     if prev_layer is None:
@@ -34,7 +34,6 @@ def trans_layer(layer,prev_layer,device):
             if isinstance(layer,SpikeLinear) and isinstance(prev_layer,SpikeConv2d):
                 repeat=int(layer.weight.size(1)/in_scale.size(0))
                 in_scale=in_scale.view(-1,1).repeat_interleave(repeat,1).view(-1)
-                2==2
         in_scale = in_scale.view(1, -1, *[1] * spatial_dim).to(device)
     _, outc = layer.output_pool[0].size()[:2]
     outputs=torch.cat(layer.output_pool,0).transpose(0, 1).contiguous().view(outc, -1)[:,:100000]
@@ -44,6 +43,8 @@ def trans_layer(layer,prev_layer,device):
     # set the scale dimension to rescale the weights of original layer
 
     # scale the weights
+    if uni_in_scale and isinstance(in_scale,torch.Tensor):
+        in_scale=torch.mean(in_scale)
     layer.weight.data=layer.weight.data*in_scale/out_scale
     if layer.bias is not None:
         layer.bias.data=layer.bias.data/out_scale.view(-1)
@@ -52,7 +53,7 @@ def trans_layer(layer,prev_layer,device):
     # print scale
     print("Mean:",torch.mean(layer.weight.data).item(),"STD:",torch.std(layer.weight.data).item())
 
-def trans_ann2snn(ann,dataloader,device):
+def trans_ann2snn(ann,dataloader,device,uni_in_scale):
     print("Start transfer ANN to SNN, this will take a while")
 
     # switch to evaluate mode
@@ -69,7 +70,7 @@ def trans_ann2snn(ann,dataloader,device):
     prev_layer=None
     for layer in ann.modules():
         if isinstance(layer,SpikeConv2d) or isinstance(layer,SpikeLinear):
-            trans_layer(layer, prev_layer, device)
+            trans_layer(layer, prev_layer, device,uni_in_scale)
             prev_layer=layer
     for layer in ann.modules():
         if isinstance(layer, SpikeConv2d) or isinstance(layer, SpikeLinear):
