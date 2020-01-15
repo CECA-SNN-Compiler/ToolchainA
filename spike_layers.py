@@ -18,8 +18,34 @@ def warp_one_in_one_out_func(func):
     return new_func
 F.dropout=warp_one_in_one_out_func(F.dropout)
 
-class SpikeConv2d(nn.Conv2d):
 
+class SpikeReLU(nn.Module):
+    def __init__(self,quantize=False):
+        super().__init__()
+        self.max_val=1
+        self.quantize=quantize
+
+    def forward(self,x):
+        if isinstance(x, SpikeTensor):
+            return x
+        else:
+            x_=F.relu(x)
+            if self.quantize:
+                bits = 5
+                if self.training:
+                    xv=x_.view(-1)
+                    max_val=torch.kthvalue(xv,int(0.99*xv.size(0)))[0]
+                    if self.max_val is 1:
+                        self.max_val=max_val.detach()
+                    else:
+                        self.max_val=(self.max_val*0.95+max_val*0.05).detach()
+                rst=torch.clamp(torch.round(x_/self.max_val*2**bits),0,2**bits)*(self.max_val/2**bits)
+                return rst
+            else:
+                return x_
+
+
+class SpikeConv2d(nn.Conv2d):
     def __init__(self,in_channels, out_channels, kernel_size, stride=1,
                  padding=0, dilation=1, groups=1,
                  bias=True, padding_mode='zeros',):
@@ -51,7 +77,6 @@ class SpikeConv2d(nn.Conv2d):
             return out
         else:
             out = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-            out = F.relu(out)
             return out
 
 class SpikeLinear(nn.Linear):

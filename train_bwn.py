@@ -25,11 +25,11 @@ parser.add_argument('--base_lr', default=0.01, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
 parser.add_argument('--batch_size', default=128,type=int)
 parser.add_argument('--test_batch_size', default=512,type=int)
-parser.add_argument('--config_name',default='testnet1')
+parser.add_argument('--config_name',default='testfull2')
 parser.add_argument('--actions',default='',type=str)
-parser.add_argument('--epochs',default=30,type=int)
+parser.add_argument('--epochs',default=90,type=int)
 parser.add_argument('--parallel',default=False)
-parser.add_argument('--weight_decay',default=1e-3,type=float)
+parser.add_argument('--weight_decay',default=1e-4,type=float)
 parser.add_argument('--half',default=0,type=bool)
 parser.add_argument('--scale',default=-1,type=float)
 parser.add_argument('--gpu',default=-1,type=int)
@@ -117,7 +117,6 @@ class BWNSGD(torch.optim.SGD):
                         d_p = buf
 
                 weight_data.add_(-group['lr'], d_p)
-
         return loss
 
 class BWNAdam(torch.optim.Adam):

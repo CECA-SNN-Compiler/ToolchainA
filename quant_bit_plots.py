@@ -203,62 +203,62 @@ if __name__=='__main__':
     parser.add_argument('--Vthr', default=1,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
     parser.add_argument('--half', default=False, type=bool)
-    parser.add_argument('--error_analysis', action='store_true')
     parser.add_argument('--uni_in_scale', action='store_true')
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
+
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
+    plt.figure(figsize=(5, 4))
     from build_network import get_net_by_name
-    net=get_net_by_name(args.net_name)
-    net.cuda()
-    if args.resume:
-        net.load_state_dict(torch.load(args.resume),False)
-    # fuse the conv and bn
-    # net.fuse_conv_bn()
-    from ann2snn import trans_ann2snn
-    device=torch.device('cuda')
-    criterion=nn.CrossEntropyLoss()
+    for bit in [2,3,4]:
+    # for bit in [3]:
+        for qmode in ['bwn',str(bit)+'b']:
+            net_name=args.net_name+str(bit)
+            net=get_net_by_name(net_name)
+            net.cuda()
+            loaded=False
+            if args.resume:
+                net.load_state_dict(torch.load(args.resume),False)
+            else:
+                cks=os.listdir('checkpoint')
+                for i in cks:
+                    if net_name in i and qmode in i:
+                        net.load_state_dict(torch.load('checkpoint/'+i), False)
+                        loaded=True
+                        break
+            if not loaded:continue
+            # fuse the conv and bn
+            # net.fuse_conv_bn()
+            from ann2snn import trans_ann2snn
+            device=torch.device('cuda')
+            criterion=nn.CrossEntropyLoss()
 
-    raw_acc, _ =validate(test_loader, net, device, criterion, 0, spike_mode=False)
+            raw_acc, _ =validate(test_loader, net, device, criterion, 0, spike_mode=False)
 
-    snn=trans_ann2snn(net,val_loader,device,args.uni_in_scale)
+            snn=trans_ann2snn(net,val_loader,device,args.uni_in_scale)
 
-    # validate to get the stat for scale factor
-    validate(test_loader,net,device,criterion,0,spike_mode=False)
-    # net.set_spike_mode()
+            # validate to get the stat for scale factor
+            validate(test_loader,net,device,criterion,0,spike_mode=False)
+            # net.set_spike_mode()
 
-    if args.error_analysis:
-        # for timesteps in [8,16,32,64,128,256]:
-        #     args.timesteps=timesteps
-        #     F1s,F2s=error_validate(test_loader,snn,device,criterion,0,spike_mode=True)
-        #     # plt.plot(F1s)
-        #     plt.plot(F2s,label=f'timesteps {args.timesteps}')
-        # # plt.xlabel("layers")
-        # # plt.ylabel("errors (L1)")
-        # # plt.title(f"L1 error of different layers on timesteps {args.timesteps}")
-        # # plt.show()
-        # plt.xlabel("layers")
-        # plt.ylabel("errors (MSE)")
-        # plt.title(f"MSE error of different layers")
-        # plt.legend()
-        # plt.show()
-        Xs = np.arange(1, 9, 1)
-        accs = []
-        for timesteps in 2 ** Xs:
-            args.timesteps = timesteps
-            try:
-                acc, loss = validate(test_loader, net, device, criterion, 0, spike_mode=True)
-                accs.append(acc)
-            except:
-                pass
-        plt.figure(figsize=(4, 3))
-        plt.plot(Xs[:len(accs)], accs, label='SNN')
-        plt.hlines(raw_acc, Xs.min(), Xs.max(), linestyles='--', label='ANN')
-        plt.xlabel('timesteps')
-        plt.ylabel('accuracy')
-        plt.xticks(Xs, 2 ** Xs)
-        plt.legend(loc='lower right')
-        # plt.title(args.net_name)
-        plt.show()
-    else:
-        validate(test_loader,snn,device,criterion,0,spike_mode=True)
+            Xs = np.arange(1, 8, 1)
+            accs = []
+            for timesteps in 2 ** Xs:
+                args.timesteps = timesteps
+                try:
+                    acc, loss = validate(test_loader, net, device, criterion, 0, spike_mode=True)
+                    accs.append(acc)
+                except:
+                    pass
+            if qmode[-1]=='b':
+                qmode+='its'
+            l=plt.plot(Xs[:len(accs)], accs, label='SNN_%s'%qmode)
+
+            plt.hlines(raw_acc, Xs.min(), Xs.max(), linestyles='--', label='ANN_%s'%qmode,colors=l[0].get_color())
+    plt.xlabel('timesteps')
+    plt.ylabel('accuracy')
+    plt.xticks(Xs, 2 ** Xs)
+    plt.ylim(40,75)
+    plt.legend(loc='lower right')
+    # plt.title(args.net_name)
+    plt.show()

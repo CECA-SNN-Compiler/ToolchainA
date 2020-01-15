@@ -44,7 +44,8 @@ def trans_layer(layer,prev_layer,device,uni_in_scale=False):
 
     # scale the weights
     if uni_in_scale and isinstance(in_scale,torch.Tensor):
-        in_scale=torch.mean(in_scale)
+        in_scale=torch.max(in_scale)
+        out_scale=torch.max(out_scale)
     layer.weight.data=layer.weight.data*in_scale/out_scale
     if layer.bias is not None:
         layer.bias.data=layer.bias.data/out_scale.view(-1)
@@ -52,6 +53,7 @@ def trans_layer(layer,prev_layer,device,uni_in_scale=False):
     layer.out_scales=out_scale.view(-1)
     # print scale
     print("Mean:",torch.mean(layer.weight.data).item(),"STD:",torch.std(layer.weight.data).item())
+
 
 def trans_ann2snn(ann,dataloader,device,uni_in_scale):
     print("Start transfer ANN to SNN, this will take a while")

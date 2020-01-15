@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
-from spike_layers import SpikeConv2d,SpikeLinear
+from spike_layers import *
 
 from datasets import get_dataset
 
@@ -26,7 +26,7 @@ parser.add_argument('--base_lr', default=0.01, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
 parser.add_argument('--batch_size', default=128,type=int)
 parser.add_argument('--test_batch_size', default=512,type=int)
-parser.add_argument('--config_name',default='testnet6')
+parser.add_argument('--config_name',default='testfull4')
 parser.add_argument('--actions',default='',type=str)
 parser.add_argument('--epochs',default=90,type=int)
 parser.add_argument('--parallel',default=False)
@@ -68,7 +68,6 @@ net=get_net_by_name(config_name)
 model_name=config_name
 log_name=f'/{model_name}_original_e{args.epochs}'
 writer=tensorboardX.SummaryWriter(f'log/{log_name}')
-
 
 if device == 'cuda':
     net=net.cuda()
@@ -180,7 +179,6 @@ class BWNAdam(torch.optim.Adam):
                 step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
 
                 weight_data.addcdiv_(-step_size, exp_avg, denom)
-
         return loss
 
 criterion = nn.CrossEntropyLoss()
@@ -210,7 +208,7 @@ def quantize_layers():
             # layer.weight.weight_back=layer.weight.weight_back.clamp(-1,1)
             # mean=layer.weight.weight_back.abs().view(layer.weight.size(0),-1).mean(-1).view(-1,*[1 for i in range(layer.weight.dim()-1)])
             channel_max=layer.weight.weight_back.abs().view(layer.weight.size(0),-1).max(1)[0]
-            quant = (2**args.bitwidth-1) / channel_max
+            quant = (2**(args.bitwidth-1)-1) / channel_max
             if layer.weight.dim()==4:
                 quant=quant.view(-1,1,1,1)
             else:
@@ -271,6 +269,10 @@ def test(epoch):
         best_acc=acc
 
 for epoch in range(0, args.epochs):
+
+    for m in net.modules():
+        if isinstance(m,SpikeReLU):
+            m.quantize=True if epoch>1 else False
     train(epoch)
     lr_scheduler.step(epoch)
     test(epoch)
