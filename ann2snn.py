@@ -74,4 +74,3 @@ def trans_ann2snn(net, dataloader, device, timesteps, weight_bits):
             unwarp_spike_layer(layer)
     print(f"Transfer ANN to SNN (timesteps={timesteps}, weight_bits={weight_bits}) Finished")
     return raw_net,net
-
