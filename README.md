@@ -34,7 +34,7 @@ not be transformed.
 
 ## Transform process
 
-![pic/](pic/process.svg)
+![process_pic](pics/process.svg)
 
 ### Preparing data
 The data loader should be defined in the datasets.py
