@@ -21,62 +21,57 @@ def unwarp_spike_layer(layer):
     layer.forward=layer.old_forward
     return layer
 
-def trans_layer(layer,prev_layer,device,uni_in_scale=False):
+def trans_layer(layer,prev_layer,timesteps,weight_bits):
     assert len(layer.output_pool)!=0
-    spatial_dim = layer.weight.dim() - 2
     if prev_layer is None:
-        in_scale=1
+        layer.out_scales[...] = torch.ones(1).to(layer.weight.data.device)
     else:
         _, inc = prev_layer.output_pool[0].size()[:2]
-        inputs = torch.cat(prev_layer.output_pool, 0).transpose(0, 1).contiguous().view(inc, -1)[:,:100000]
-        in_scale = torch.sort(inputs, -1)[0][:, int(inputs.size(1) * 0.99)]
-        if in_scale.size(0)!=layer.weight.size(1):
-            if isinstance(layer,SpikeLinear) and isinstance(prev_layer,SpikeConv2d):
-                repeat=int(layer.weight.size(1)/in_scale.size(0))
-                in_scale=in_scale.view(-1,1).repeat_interleave(repeat,1).view(-1)
-        in_scale = in_scale.view(1, -1, *[1] * spatial_dim).to(device)
-    _, outc = layer.output_pool[0].size()[:2]
-    outputs=torch.cat(layer.output_pool,0).transpose(0, 1).contiguous().view(outc, -1)[:,:100000]
-    out_scale = torch.sort(outputs, -1)[0][:, int(outputs.size(1) * 0.99)]
-    out_scale = out_scale.view(-1, 1, *[1] * spatial_dim).to(device)
+        in_max=torch.cat(prev_layer.output_pool,0).max()
+        out_max=torch.cat(layer.output_pool,0).max()
+        weight_max=layer.weight.abs().max()
+        S_x=in_max/timesteps
+        S_w=layer.weight.data.abs().max()/(2**(weight_bits-1)-1)
+        Vthr=torch.round(out_max/S_x/S_w/timesteps)
+        W=torch.round((2**(weight_bits-1)-1)/weight_max*layer.weight.data)
+        layer.weight.data[...]=W
+        layer.Vthr[...]=Vthr
+        layer.out_scales[...]=1/Vthr/timesteps
 
-    # set the scale dimension to rescale the weights of original layer
-
-    # scale the weights
-    if uni_in_scale and isinstance(in_scale,torch.Tensor):
-        in_scale=torch.max(in_scale)
-        out_scale=torch.max(out_scale)
-    layer.weight.data=layer.weight.data*in_scale/out_scale
     if layer.bias is not None:
-        layer.bias.data=layer.bias.data/out_scale.view(-1)
+        raise NotImplementedError
+        # layer.bias.data=layer.bias.data/out_scale.view(-1)
     # set the out_scales of layer
-    layer.out_scales=out_scale.view(-1)
+
     # print scale
-    print("Mean:",torch.mean(layer.weight.data).item(),"STD:",torch.std(layer.weight.data).item())
+    print("Layer Mean:",torch.mean(layer.weight.data).item(),
+          "STD:",torch.std(layer.weight.data).item(),
+          "Vthr",layer.Vthr.item())
 
 
-def trans_ann2snn(ann,dataloader,device,uni_in_scale):
+def trans_ann2snn(net, dataloader, device, timesteps, weight_bits):
     print("Start transfer ANN to SNN, this will take a while")
 
     # switch to evaluate mode
-    ann.eval()
+    raw_net=copy.deepcopy(net)
+    net.eval()
 
-    for layer in ann.modules():
+    for layer in net.modules():
         if isinstance(layer,SpikeConv2d) or isinstance(layer,SpikeLinear):
             warp_spike_layer(layer)
     with torch.no_grad():
         for data, target in tqdm(dataloader):
             data = data.to(device)
-            output = ann(data)
+            output = net(data)
 
     prev_layer=None
-    for layer in ann.modules():
+    for layer in net.modules():
         if isinstance(layer,SpikeConv2d) or isinstance(layer,SpikeLinear):
-            trans_layer(layer, prev_layer, device,uni_in_scale)
+            trans_layer(layer, prev_layer, timesteps,weight_bits)
             prev_layer=layer
-    for layer in ann.modules():
+    for layer in net.modules():
         if isinstance(layer, SpikeConv2d) or isinstance(layer, SpikeLinear):
             unwarp_spike_layer(layer)
-    print("Transfer ANN to SNN Finished")
-    return ann
+    print(f"Transfer ANN to SNN (timesteps={timesteps}, weight_bits={weight_bits}) Finished")
+    return raw_net,net
 

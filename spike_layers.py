@@ -31,10 +31,11 @@ class SpikeReLU(nn.Module):
         else:
             x_=F.relu(x)
             if self.quantize:
-                bits = 5
+                bits = 10
                 if self.training:
                     xv=x_.view(-1)
-                    max_val=torch.kthvalue(xv,int(0.99*xv.size(0)))[0]
+                    # max_val=torch.kthvalue(xv,int(0.99*xv.size(0)))[0]
+                    max_val=xv.max()
                     if self.max_val is 1:
                         self.max_val=max_val.detach()
                     else:
@@ -53,10 +54,12 @@ class SpikeConv2d(nn.Conv2d):
         super().__init__(in_channels, out_channels, kernel_size, stride,
                  padding, dilation, groups,bias, padding_mode)
         self.mem_potential=None
+        self.register_buffer('out_scales',torch.ones(1))
+        self.register_buffer('Vthr',torch.ones(1))
 
     def forward(self,x):
-        Vthr=1
         if isinstance(x,SpikeTensor):
+            Vthr = self.Vthr
             out = F.conv2d(x.data, self.weight, self.bias, self.stride, self.padding, self.dilation,
                            self.groups)
             chw = out.size()[1:]
@@ -64,7 +67,7 @@ class SpikeConv2d(nn.Conv2d):
             self.mem_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
             spikes = []
             for t in range(x.timesteps):
-                self.mem_potential += Vthr* out_s[t]
+                self.mem_potential += out_s[t]
                 spike = (self.mem_potential > Vthr).float()
                 if reset_mode == 'zero':
                     self.mem_potential *= (1 - spike)
@@ -83,8 +86,10 @@ class SpikeLinear(nn.Linear):
     def __init__(self,in_features, out_features, bias=True,last_layer=False):
         super().__init__(in_features, out_features, bias)
         self.last_layer=last_layer
+        self.register_buffer('out_scales', torch.ones(1))
+        self.register_buffer('Vthr', torch.ones(1))
+
     def forward(self,x):
-        self.Vthr=1
         if isinstance(x,SpikeTensor):
             out = F.linear(x.data, self.weight, self.bias)
             chw = out.size()[1:]
@@ -92,7 +97,7 @@ class SpikeLinear(nn.Linear):
             self.mem_potential = torch.zeros(out_s.size(1), *chw).to(out_s.device)
             spikes = []
             for t in range(x.timesteps):
-                self.mem_potential += self.Vthr * out_s[t]
+                self.mem_potential += out_s[t]
                 spike = (self.mem_potential > self.Vthr).float()
                 if reset_mode == 'zero':
                     self.mem_potential *= (1 - spike)

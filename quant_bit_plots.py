@@ -203,7 +203,7 @@ if __name__=='__main__':
     parser.add_argument('--Vthr', default=1,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
     parser.add_argument('--half', default=False, type=bool)
-    parser.add_argument('--uni_in_scale', action='store_true')
+    parser.add_argument('--weight_bits', default=3, type=int)
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
 
@@ -235,7 +235,7 @@ if __name__=='__main__':
 
             raw_acc, _ =validate(test_loader, net, device, criterion, 0, spike_mode=False)
 
-            snn=trans_ann2snn(net,val_loader,device,args.uni_in_scale)
+            snn=trans_ann2snn(net,val_loader,device,args.timesteps,args.weight_bits)
 
             # validate to get the stat for scale factor
             validate(test_loader,net,device,criterion,0,spike_mode=False)

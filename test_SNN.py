@@ -75,10 +75,10 @@ def validate(test_loader, model, device, criterion, epoch, train_writer=None,spi
                     data = SpikeTensor(replica_data, args.timesteps,scale_factor=1)
 
             output = model(data)
-            if spike_mode:
+            if isinstance(output,SpikeTensor):
                 output=output.to_float()
-            elif hasattr(prediction_layer,'out_scales'):
-                output=output*prediction_layer.out_scales.view(1,-1)
+            # elif hasattr(prediction_layer,'out_scales'):
+            #     output=output*prediction_layer.out_scales.view(1,-1)
 
             target = target.to(device)
             loss = criterion(output, target)
@@ -200,11 +200,9 @@ if __name__=='__main__':
     parser.add_argument('--test_batch_size', default=128, type=int)
     parser.add_argument('--timesteps', default=64, type=int)
     parser.add_argument('--input_poisson', action='store_true')
-    parser.add_argument('--Vthr', default=1,type=float)
     parser.add_argument('--reset_mode', default='subtraction',type=str,choices=['zero','subtraction'])
     parser.add_argument('--half', default=False, type=bool)
-    parser.add_argument('--error_analysis', action='store_true')
-    parser.add_argument('--uni_in_scale', action='store_true')
+    parser.add_argument('--weight_bits', default=4, type=int)
     args = parser.parse_args()
     args.dataset = 'CIFAR10'
     test_loader, val_loader, train_loader, train_val_loader=get_dataset(args)
@@ -220,45 +218,29 @@ if __name__=='__main__':
     criterion=nn.CrossEntropyLoss()
 
     raw_acc, _ =validate(test_loader, net, device, criterion, 0, spike_mode=False)
-
-    snn=trans_ann2snn(net,val_loader,device,args.uni_in_scale)
+    print("Testing the Non-Spike but weight transferred net")
+    ann,snn=trans_ann2snn(net,val_loader,device,args.timesteps,args.weight_bits)
 
     # validate to get the stat for scale factor
-    validate(test_loader,net,device,criterion,0,spike_mode=False)
+    for m in snn.modules():
+        if isinstance(m,SpikeReLU):
+            m.quantize=True
+    validate(test_loader,snn,device,criterion,0,spike_mode=False)
     # net.set_spike_mode()
 
-    if args.error_analysis:
-        # for timesteps in [8,16,32,64,128,256]:
-        #     args.timesteps=timesteps
-        #     F1s,F2s=error_validate(test_loader,snn,device,criterion,0,spike_mode=True)
-        #     # plt.plot(F1s)
-        #     plt.plot(F2s,label=f'timesteps {args.timesteps}')
-        # # plt.xlabel("layers")
-        # # plt.ylabel("errors (L1)")
-        # # plt.title(f"L1 error of different layers on timesteps {args.timesteps}")
-        # # plt.show()
-        # plt.xlabel("layers")
-        # plt.ylabel("errors (MSE)")
-        # plt.title(f"MSE error of different layers")
-        # plt.legend()
-        # plt.show()
-        Xs = np.arange(1, 9, 1)
-        accs = []
-        for timesteps in 2 ** Xs:
-            args.timesteps = timesteps
-            try:
-                acc, loss = validate(test_loader, net, device, criterion, 0, spike_mode=True)
-                accs.append(acc)
-            except:
-                pass
-        plt.figure(figsize=(4, 3))
-        plt.plot(Xs[:len(accs)], accs, label='SNN')
-        plt.hlines(raw_acc, Xs.min(), Xs.max(), linestyles='--', label='ANN')
-        plt.xlabel('timesteps')
-        plt.ylabel('accuracy')
-        plt.xticks(Xs, 2 ** Xs)
-        plt.legend(loc='lower right')
-        # plt.title(args.net_name)
-        plt.show()
-    else:
-        validate(test_loader,snn,device,criterion,0,spike_mode=True)
+    Xs = np.arange(1, 7, 1)
+    accs = []
+    for timesteps in 2 ** Xs:
+        args.timesteps = timesteps
+        ann,snn=trans_ann2snn(ann, val_loader, device, args.timesteps, args.weight_bits)
+        acc, loss = validate(test_loader, snn, device, criterion, 0, spike_mode=True)
+        accs.append(acc)
+    plt.figure(figsize=(4, 3))
+    plt.plot(Xs[:len(accs)], accs, label='SNN')
+    plt.hlines(raw_acc, Xs.min(), Xs.max(), linestyles='--', label='ANN')
+    plt.xlabel('timesteps')
+    plt.ylabel('accuracy')
+    plt.xticks(Xs, 2 ** Xs)
+    plt.legend(loc='lower right')
+    # plt.title(args.net_name)
+    plt.show()

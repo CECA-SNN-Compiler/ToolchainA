@@ -272,7 +272,7 @@ for epoch in range(0, args.epochs):
 
     for m in net.modules():
         if isinstance(m,SpikeReLU):
-            m.quantize=True if epoch>1 else False
+            m.quantize=True if epoch%2==1 else False
     train(epoch)
     lr_scheduler.step(epoch)
     test(epoch)

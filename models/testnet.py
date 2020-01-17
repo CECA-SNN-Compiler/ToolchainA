@@ -169,6 +169,8 @@ class TestFull(nn.Module):
         out = spike_avg_pooling(out, 2)
         out = self.relu3(self.conv3(out))
         out = out.view(out.size(0), -1)
+        if isinstance(x,SpikeTensor):
+            out=out.to_float()
         out = self.fc1(out)
         return out
 
