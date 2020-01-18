@@ -33,8 +33,10 @@ The final Fully connect layer and softmax layer will
 not be transformed.
 
 ## Transform process
-
+The overall transform process is demonstrated in the following picture
+<div align=center>
 ![process_pic](./pics/process.svg)
+</div>
 
 There is a example at transform_example.py.
 You can transform your own network by changing the ExampleNet in this python file.
