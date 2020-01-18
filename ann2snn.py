@@ -23,20 +23,20 @@ def unwarp_spike_layer(layer):
 
 def trans_layer(layer,prev_layer,timesteps,weight_bits):
     assert len(layer.output_pool)!=0
+    out_max=torch.cat(layer.output_pool,0).max()
+    weight_max=layer.weight.abs().max()
+    S_w=layer.weight.data.abs().max()/(2**(weight_bits-1)-1)
     if prev_layer is None:
-        layer.out_scales[...] = torch.ones(1).to(layer.weight.data.device)
+        Vthr = torch.round(out_max / S_w )
     else:
         _, inc = prev_layer.output_pool[0].size()[:2]
-        in_max=torch.cat(prev_layer.output_pool,0).max()
-        out_max=torch.cat(layer.output_pool,0).max()
-        weight_max=layer.weight.abs().max()
-        S_x=in_max/timesteps
-        S_w=layer.weight.data.abs().max()/(2**(weight_bits-1)-1)
-        Vthr=torch.round(out_max/S_x/S_w/timesteps)
-        W=torch.round((2**(weight_bits-1)-1)/weight_max*layer.weight.data)
-        layer.weight.data[...]=W
-        layer.Vthr[...]=Vthr
-        layer.out_scales[...]=1/Vthr/timesteps
+        in_max = torch.cat(prev_layer.output_pool, 0).max()
+        S_in = in_max / timesteps
+        Vthr=torch.round(out_max/S_in/S_w/timesteps)
+    W=torch.round((2**(weight_bits-1)-1)/weight_max*layer.weight.data)
+    layer.weight.data[...]=W
+    layer.Vthr[...]=Vthr
+    layer.out_scales[...]=1/Vthr/timesteps
 
     if layer.bias is not None:
         raise NotImplementedError
