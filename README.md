@@ -8,8 +8,8 @@ linear layer and average pooling layer.
 ## Requirements
 * Python >=3.5
 * pytorch >=1.3
+* torchvision
 * GPUtil
-* matplotlib
 
 ## Constraints
 For Hardware v1.0, the input channel size of the convolution
@@ -41,6 +41,11 @@ The overall transform process is demonstrated in the following picture
 </div>
 
 There is a example at transform_example.py.
+
+```shell
+$ python3 transform_example.py --weight_bitwidth 4 --timesteps 64 --finetune_epochs 30 --load checkpoint/example_net_ann.pth
+```
+
 You can transform your own network by changing the ExampleNet in this python file.
 The arguments here are:
 * --load LOAD
@@ -65,7 +70,7 @@ The arguments here are:
 
 
 ### dataset
-The datasets.py contains the dataloader for MNIST and CIFAR10.
+The datasets.py contains the dataloader for MNIST and CIFAR10/100.
 
 If other dataset is used,
 the corresponding dataloader should be defined in the datasets.py
@@ -137,4 +142,18 @@ Finally, the SNN can be saved in the `.pth` file.
 ```python3
 torch.save(snn,args.save_file)
 print("Save the SNN in {}".format(args.save_file))
+```
+
+# Error Analysis
+
+There is a tool for analyse the error of quantization and spike transform.
+
+### Requirement
+* seaborn
+* matplotlib
+
+### Usage
+As a example, we analyse the example_net as follows:
+```shell
+$ python3 analyse_error.py --load checkpoint/example_net_ann.pth example_net --finetune_epochs 10
 ```
