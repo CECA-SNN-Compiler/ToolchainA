@@ -33,7 +33,7 @@ class ExampleNet(nn.Module):
 if __name__=='__main__':
     # parse args
     parser=argparse.ArgumentParser()
-    parser.add_argument('--load_file',type=str,help='the location of the trained weights')
+    parser.add_argument('--load',type=str,help='the location of the trained weights')
     parser.add_argument('--dataset',default='CIFAR10',type=str,help='the location of the trained weights')
     parser.add_argument('--save_file',default="./out_snn.pth",type=str,help='the output location of the transferred weights')
     parser.add_argument('--batch_size', default=128, type=int)
@@ -41,17 +41,17 @@ if __name__=='__main__':
     parser.add_argument('--timesteps', default=64, type=int)
     parser.add_argument('--reset_mode', default='subtraction', type=str, choices=['zero', 'subtraction'])
     parser.add_argument('--weight_bitwidth', default=4, type=int,help='weight quantization bitwidth')
-    parser.add_argument('--finetune_lr', default=0.01, type=float,help='finetune learning rate')
+    parser.add_argument('--finetune_lr', default=0.005, type=float,help='finetune learning rate')
     parser.add_argument('--finetune_epochs', default=60, type=int,help='finetune epochs')
     parser.add_argument('--finetune_wd', default=5e-4, type=float,help='finetune weight decay')
-    parser.add_argument('--finetune_momentum', default=0.95, type=float,help='finetune momentum')
+    parser.add_argument('--finetune_momentum', default=0.9, type=float,help='finetune momentum')
 
     args=parser.parse_args()
 
     # Build Model
     net=ExampleNet()
-    if args.load_file:
-        net.load_state_dict(torch.load(args.load_file))
+    if args.load:
+        net.load_state_dict(torch.load(args.load))
     net.cuda()
 
     # Preparing for train

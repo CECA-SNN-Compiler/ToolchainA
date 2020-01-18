@@ -28,13 +28,13 @@ def init_quantize_net(net):
             if m.bias is not None:
                 raise NotImplementedError
 
-def quantize_layers(bitwidth):
+def quantize_layers(bitwidth,rescale=True):
     for layer in quantized_layers:
         with torch.no_grad():
             # layer.weight.weight_back=layer.weight.weight_back.clamp(-1,1)
             # mean=layer.weight.weight_back.abs().view(layer.weight.size(0),-1).mean(-1).view(-1,*[1 for i in range(layer.weight.dim()-1)])
-            quantized_w,scale=quantize_tensor(layer.weight.weight_back,bitwidth,True)
-            layer.weight[...]=quantized_w/scale
+            quantized_w,scale=quantize_tensor(layer.weight.weight_back,bitwidth,False)
+            layer.weight[...]=quantized_w/scale if rescale else quantized_w
 
 def clear_quantize_bindings():
     quantized_layers.clear()
@@ -111,4 +111,5 @@ def quantize_finetune(raw_net,trainloader,criterion,device,args):
     for epoch in range(0, args.finetune_epochs):
         quantize_train(epoch,args.weight_bitwidth,net,trainloader,optimizer,criterion,device)
         lr_scheduler.step(epoch)
+    quantize_layers(args.weight_bitwidth,False)
     return net

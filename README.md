@@ -39,7 +39,7 @@ not be transformed.
 There is a example at transform_example.py.
 You can transform your own network by modifying it.
 The arguments here are:
-* --load_file LOAD_FILE
+* --load LOAD
                         the location of the trained weights
 *  --dataset DATASET     the location of the trained weights
 *  --save_file SAVE_FILE
