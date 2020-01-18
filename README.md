@@ -34,7 +34,9 @@ not be transformed.
 
 ## Transform process
 The overall transform process is demonstrated in the following picture
+
 <div align=center>
+
 ![process_pic](./pics/process.svg)
 </div>
 
