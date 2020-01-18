@@ -189,9 +189,6 @@ optimizer=BWNSGD(net.parameters(),args.base_lr,0.9,weight_decay=args.weight_deca
 lr_scheduler=torch.optim.lr_scheduler.MultiStepLR(optimizer,[int(args.epochs*0.5),int(args.epochs*0.75)],0.1)
 
 
-
-
-
 def train(epoch):
     print('\nEpoch: %d' % epoch)
     net.train()

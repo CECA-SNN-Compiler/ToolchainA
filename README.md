@@ -34,8 +34,42 @@ not be transformed.
 
 ## Transform process
 
-![process_pic](pics/process.svg)
+![process_pic](./pics/process.svg)
 
-### Preparing data
-The data loader should be defined in the datasets.py
+There is a example at transform_example.py.
+You can transform your own network by modifying it.
+The arguments here are:
+* --load_file LOAD_FILE
+                        the location of the trained weights
+*  --dataset DATASET     the location of the trained weights
+*  --save_file SAVE_FILE
+                        the output location of the transferred weights
+*   --batch_size BATCH_SIZE
+*   --test_batch_size TEST_BATCH_SIZE
+*   --timesteps TIMESTEPS
+*   --reset_mode {zero,subtraction}
+*   --weight_bitwidth WEIGHT_BITWIDTH
+                        weight quantization bitwidth
+*   --finetune_lr FINETUNE_LR
+                        finetune learning rate
+*   --finetune_epochs FINETUNE_EPOCHS
+                        finetune epochs
+*   --finetune_wd FINETUNE_WD
+                        finetune weight decay
+*   --finetune_momentum FINETUNE_MOMENTUM
+                        finetune momentum
 
+
+### dataset
+The datasets.py contains the dataloader for MNIST and CIFAR10.
+
+If other dataset is used,
+the corresponding dataloader should be defined in the datasets.py
+
+### Write network definition
+Write your network class use the following modules:
+* SpikeReLU
+* SpikeConv2d,SpikeLinear
+* SpikeAvgPool2d,spike_avg_pooling
+
+###

@@ -14,14 +14,14 @@ def get_dataset(args):
         raise NotImplementedError
         kwargs = {'num_workers': 8, 'pin_memory': True}
         train_loader = torch.utils.data.DataLoader(
-            datasets.MNIST('/datasets/torch', train=True, download=True,
+            datasets.MNIST('./datasets', train=True, download=True,
                            transform=transforms.Compose([
                                transforms.ToTensor(),
                                transforms.Normalize((0.1307,), (0.3081,))
                            ])),
             batch_size=args.batch_size, shuffle=True, **kwargs)
         test_loader = torch.utils.data.DataLoader(
-            datasets.MNIST('/datasets/torch', train=False, download=True, transform=transforms.Compose([
+            datasets.MNIST('./datasets', train=False, download=True, transform=transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.1307,), (0.3081,))
             ])),
@@ -49,9 +49,9 @@ def get_dataset(args):
             normalize,
         ])
         kwargs = {'num_workers': 4, 'pin_memory': False}
-        root='/datasets/torch'
+        root='./datasets'
         if not os.path.exists(root):
-            root='./data'
+            os.makedirs(root)
         if args.dataset=='CIFAR10':
             set=datasets.CIFAR10
         else:

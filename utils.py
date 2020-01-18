@@ -1,9 +1,9 @@
-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import copy
 import torch
 import torch.nn as nn
+
 
 class Identity(nn.Module):
     def __call__(self,x):

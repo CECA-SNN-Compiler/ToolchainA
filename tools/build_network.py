@@ -1,5 +1,5 @@
 from models.testnet import *
-
+from models.example_net import *
 
 def get_net_by_name(net_name):
     if 'testnet' in net_name:
@@ -12,6 +12,8 @@ def get_net_by_name(net_name):
     elif net_name=='vgg16':
         from models.vggv2 import vgg16
         net=vgg16()
+    elif net_name=='example_net':
+        net=ExampleNet()
     else:
         raise NotImplementedError
     return net

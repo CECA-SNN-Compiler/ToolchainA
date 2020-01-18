@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
-
+from tools.build_network import get_net_by_name
 from datasets import get_dataset
 
 
@@ -23,12 +23,11 @@ parser.add_argument('--base_lr', default=0.05, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', default=None, help='resume from checkpoint')
 parser.add_argument('--batch_size', default=128,type=int)
 parser.add_argument('--test_batch_size', default=512,type=int)
-parser.add_argument('--config_name',default='testnet3')
+parser.add_argument('--config_name',default='example_net')
 parser.add_argument('--actions',default='',type=str)
 parser.add_argument('--epochs',default=90,type=int)
 parser.add_argument('--parallel',default=False)
 parser.add_argument('--weight_decay',default=5e-4,type=float)
-parser.add_argument('--half',default=0,type=bool)
 parser.add_argument('--scale',default=-1,type=float)
 parser.add_argument('--gpu',default=-1,type=int)
 
@@ -58,7 +57,6 @@ config_name=args.config_name
 
 # build network
 
-from build_network import get_net_by_name
 net=get_net_by_name(config_name)
 
 model_name=config_name

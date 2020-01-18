@@ -49,11 +49,11 @@ def trans_layer(layer,prev_layer,timesteps,weight_bits):
           "Vthr",layer.Vthr.item())
 
 
-def trans_ann2snn(net, dataloader, device, timesteps, weight_bits):
+def trans_ann2snn(raw_net, dataloader, device, timesteps, weight_bits):
     print("Start transfer ANN to SNN, this will take a while")
 
     # switch to evaluate mode
-    raw_net=copy.deepcopy(net)
+    net=copy.deepcopy(raw_net)
     net.eval()
 
     for layer in net.modules():
@@ -73,4 +73,4 @@ def trans_ann2snn(net, dataloader, device, timesteps, weight_bits):
         if isinstance(layer, SpikeConv2d) or isinstance(layer, SpikeLinear):
             unwarp_spike_layer(layer)
     print(f"Transfer ANN to SNN (timesteps={timesteps}, weight_bits={weight_bits}) Finished")
-    return raw_net,net
+    return net
